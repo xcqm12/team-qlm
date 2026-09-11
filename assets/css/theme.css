@@ -1,0 +1,136 @@
+﻿/* ========== Theme: Cute 可爱主题特效 ========== */
+body { background: linear-gradient(135deg, #fef6ff 0%, #f0f4ff 50%, #fff6f9 100%); }
+
+/* Hero 装饰粒子 */
+.hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(255,255,255,0.35) 2px, transparent 3px),
+    radial-gradient(circle at 70% 20%, rgba(255,255,255,0.3) 2px, transparent 3px),
+    radial-gradient(circle at 40% 80%, rgba(255,255,255,0.3) 3px, transparent 4px),
+    radial-gradient(circle at 85% 70%, rgba(255,255,255,0.25) 2px, transparent 3px),
+    radial-gradient(circle at 10% 90%, rgba(255,255,255,0.3) 2px, transparent 3px);
+  pointer-events: none;
+  animation: floatParticles 8s ease-in-out infinite alternate;
+}
+@keyframes floatParticles {
+  0% { transform: translateY(0) scale(1); opacity: 0.8; }
+  100% { transform: translateY(-10px) scale(1.05); opacity: 1; }
+}
+
+/* Card hover 可爱化 */
+.card {
+  border: 1px solid rgba(118,75,162,0.08);
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s;
+}
+.card:hover {
+  transform: translateY(-6px) scale(1.015);
+  box-shadow: 0 20px 40px rgba(118,75,162,0.18);
+}
+
+/* 按钮动画 */
+.hero-btn {
+  position: relative;
+  overflow: hidden;
+}
+.hero-btn::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 0; height: 0;
+  border-radius: 50%;
+  background: rgba(118,75,162,0.15);
+  transform: translate(-50%,-50%);
+  transition: width 0.5s, height 0.5s;
+}
+.hero-btn:hover::before {
+  width: 400px; height: 400px;
+}
+
+/* 导航项动画 */
+.nav-menu li a {
+  position: relative;
+  transition: all 0.25s;
+}
+
+/* Section 标题下划线可爱风格 */
+.section-title h2 {
+  display: inline-block;
+  position: relative;
+}
+.section-title h2::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 4px;
+  background: linear-gradient(90deg, #ff6b9d, #764ba2, #667eea);
+  border-radius: 4px;
+}
+
+/* 可爱的项目封面文字效果 */
+.card-cover {
+  background: linear-gradient(135deg, #ffb6c1 0%, #ff9ed0 30%, #b794f4 70%, #8b7dd8 100%);
+  text-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+
+/* 卡片封面渐变动画 */
+.card:hover .card-cover {
+  filter: brightness(1.08);
+}
+
+/* 新闻项目悬停偏移效果 */
+.news-item {
+  border: 1px solid rgba(118,75,162,0.08);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.news-item:hover {
+  transform: translateX(6px);
+  box-shadow: 0 8px 24px rgba(118,75,162,0.12);
+  border-color: rgba(118,75,162,0.25);
+}
+
+/* Flash message */
+div[style*='#667eea20'] {
+  border-radius: 10px !important;
+  font-weight: 500;
+}
+
+/* 输入框聚焦可爱风格 */
+.form-control:focus {
+  box-shadow: 0 0 0 3px rgba(102,126,234,0.15);
+}
+
+/* Back to top 按钮 (JS 添加) */
+.back-to-top {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff;
+  border-radius: 50%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(118,75,162,0.35);
+  z-index: 99;
+  border: none;
+  transition: transform 0.2s;
+}
+.back-to-top:hover { transform: translateY(-3px); }
+.back-to-top.show { display: flex; animation: fadeInUp 0.3s ease; }
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
