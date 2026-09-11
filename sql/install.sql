@@ -152,8 +152,9 @@ CREATE TABLE navigation (
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 默认管理员记录会在 install.php 中被安装时设置的账号密码覆盖。
 INSERT INTO admin_users (username, password, nickname, email, role, status) VALUES
-('admin', 'admin123', '超级管理员', 'admin@qiling.team', 2, 1);
+('admin', '__SET_DURING_INSTALL__', '超级管理员', 'admin@qiling.team', 2, 1);
 
 INSERT INTO team_info (team_name, team_name_en, team_slogan, team_description, team_content, founded_date, contact_email, contact_address, contact_worktime, site_keywords, site_description, site_copyright) VALUES
 ('七零喵团队', 'Seven Zero Meow Team', '由一群游戏爱好者与开发者所组建的团队',

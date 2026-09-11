@@ -170,14 +170,12 @@ http://您的域名/install.php
 
 安装完成后系统会自动生成 installed.lock 文件，防止重复安装。
 
-### 默认测试账号
+### 默认后台账号说明
 
-`
-用户名: admin
-密码:   admin123
-`
+- 默认管理员用户名：`admin`
+- 管理员密码：**安装时由你在安装向导中自行设置**
 
-> ⚠️ **重要！** 生产环境请务必在首次登录后修改默认密码！
+> ⚠️ **重要！** 请设置高强度密码，并妥善保管后台账号。
 
 ---
 
@@ -329,14 +327,8 @@ ews-detail.php?id=新闻ID | 新闻正文 |
 4. 完成后系统会更新管理员账号（数据表保留，不影响已有数据）
 
 **方法二：直接在数据库中重置**
-`sql
--- 将 admin 密码重置为 'admin123'
-UPDATE dmin_users 
-SET password = PASSWORD('admin123') 
-WHERE username = 'admin';
-`
 
-> 💡 注意：某些 MySQL 版本不支持 PASSWORD() 函数，请改为手动插入已知密码 hash。
+请将 `admin_users.password` 更新为你自己生成的 PHP `password_hash()` 结果，或删除 `installed.lock` 后重新运行安装向导设置新密码。
 
 ### Q5：如何修改默认的数据库配置
 
@@ -418,7 +410,7 @@ avigation | 导航菜单 | id, title, url, target, sort_order, status |
 
 ## 🔒 安全建议
 
-1. **修改默认管理员密码**：dmin/admin123 必须在首次登录后修改
+1. **使用高强度管理员密码**：请在安装时设置复杂密码，避免弱口令
 2. **删除 install.php**：安装完成后可删除或重命名 install.php（可选）
 3. **数据库账号权限最小化**：生产环境建议 MySQL 账号只授予 SELECT/INSERT/UPDATE/DELETE 权限，避免授予 ALL PRIVILEGES
 4. **文件上传安全**：
