@@ -48,11 +48,11 @@ body { font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   <form method="post">
     <div class="form-group">
       <label>用户名</label>
-      <input type="text" name="username" class="form-input" value="admin" required autofocus>
+      <input type="text" name="username" class="form-input" value="<?php echo htmlspecialchars($username ?? '', ENT_QUOTES, 'UTF-8'); ?>" required autofocus>
     </div>
     <div class="form-group">
       <label>密码</label>
-      <input type="password" name="password" class="form-input" value="admin123" required>
+      <input type="password" name="password" class="form-input" required>
     </div>
     <button type="submit" class="btn">登 录</button>
   </form>

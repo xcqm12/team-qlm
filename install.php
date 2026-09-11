@@ -8,6 +8,7 @@ ini_set('display_errors', 1);
 
 $step = (int)($_GET['step'] ?? 1);
 $configFile = __DIR__ . '/config/config.php';
+$configLocalFile = __DIR__ . '/config/config.local.php';
 $installedFile = __DIR__ . '/installed.lock';
 $allowReinstall = isset($_GET['reinstall']) || isset($_GET['reset']);
 
@@ -18,7 +19,7 @@ $dbName = $_POST['db_name'] ?? 'qiling_team';
 $dbUser = $_POST['db_user'] ?? 'root';
 $dbPass = $_POST['db_pass'] ?? '';
 $adminUser = $_POST['admin_user'] ?? 'admin';
-$adminPass = $_POST['admin_pass'] ?? 'admin123';
+$adminPass = $_POST['admin_pass'] ?? '';
 
 $msg = '';
 $msgType = 'info';
@@ -69,62 +70,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->exec('INSERT INTO admin_users (username, password, nickname, role, status) VALUES (' . $pdo->quote($adminUser) . ', ' . $pdo->quote($adminPassHash) . ', ' . $pdo->quote($adminUser) . ', 2, 1)');
         }
 
-        // 写入配置文件（更可靠的方式：逐行匹配替换 + 失败检测）
-        if (!file_exists($configFile)) {
-            throw new Exception('配置文件不存在: ' . $configFile);
+        // 写入本地配置文件，避免将真实数据库账号密码提交到仓库
+        $configDir = dirname($configLocalFile);
+        if (!is_dir($configDir)) {
+          throw new Exception('配置目录不存在: ' . $configDir);
         }
-        $configContent = @file_get_contents($configFile);
-        if ($configContent === false) {
-            throw new Exception('无法读取配置文件，请检查文件权限: ' . $configFile);
-        }
-        if (!is_writable($configFile)) {
-            throw new Exception('配置文件不可写，请修改权限: ' . $configFile . ' (建议 0666 或 0644)');
-        }
-
-        // 方式一：逐行替换（最可靠，避免正则转义问题）
-        $lines = explode("\n", $configContent);
-        $newLines = [];
-        $replacements = [
-            'DB_HOST' => $dbHost,
-            'DB_PORT' => $dbPort,
-            'DB_NAME' => $dbName,
-            'DB_USER' => $dbUser,
-            'DB_PASS' => $dbPass,
-        ];
-        $replacedCount = 0;
-        foreach ($lines as $line) {
-            $matched = false;
-            foreach ($replacements as $const => $val) {
-                if (preg_match('/define\s*\(\s*[\'"]' . preg_quote($const, '/') . '[\'"]/', $line)) {
-                    $escapedVal = str_replace("'", "\\'", str_replace("\\", "\\\\", $val));
-                    $newLines[] = "define('" . $const . "', '" . $escapedVal . "');";
-                    $matched = true;
-                    $replacedCount++;
-                    break;
-                }
-            }
-            if (!$matched) $newLines[] = $line;
-        }
-        $newContent = implode("\n", $newLines);
-
-        // 确保至少替换了 5 个 DB_* 常量
-        if ($replacedCount < 5) {
-            throw new Exception('配置文件写入失败：仅替换了 ' . $replacedCount . ' 个常量（预期 5 个），配置文件格式可能不兼容');
+        if (file_exists($configLocalFile)) {
+          if (!is_writable($configLocalFile)) {
+            throw new Exception('本地配置文件不可写，请修改权限: ' . $configLocalFile);
+          }
+        } elseif (!is_writable($configDir)) {
+          throw new Exception('配置目录不可写，请修改权限: ' . $configDir . ' (建议 0755 或 0777)');
         }
 
-        // 原子写入：先写临时文件再替换（避免写入过程中断）
-        $tmpFile = $configFile . '.tmp.' . time();
-        if (@file_put_contents($tmpFile, $newContent) === false) {
-            throw new Exception('无法写入配置文件，请检查目录权限');
+        $localConfig = array(
+          'host' => $dbHost,
+          'port' => $dbPort,
+          'name' => $dbName,
+          'user' => $dbUser,
+          'pass' => $dbPass,
+          'charset' => 'utf8mb4',
+        );
+        $newContent = "<?php\nreturn " . var_export($localConfig, true) . ";\n";
+
+        if (@file_put_contents($configLocalFile, $newContent) === false) {
+          throw new Exception('无法写入本地配置文件 ' . $configLocalFile . '，请检查文件和目录权限');
         }
-        if (!@rename($tmpFile, $configFile)) {
-            @unlink($tmpFile);
-            // 回退方式：直接写入
-            if (@file_put_contents($configFile, $newContent) === false) {
-                throw new Exception('无法写入配置文件 ' . $configFile . '，请检查文件和目录权限');
-            }
-        }
-        @chmod($configFile, 0644);
+        @chmod($configLocalFile, 0644);
 
         // 写入已安装标记
         file_put_contents($installedFile, date('Y-m-d H:i:s'));
@@ -199,7 +171,7 @@ body { font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
     $checks = [
         'PHP 版本 >= 7.3' => version_compare(PHP_VERSION, '7.3.0', '>='),
         'PDO MySQL 扩展' => extension_loaded('pdo_mysql'),
-        'config/config.php 可写' => is_writable($configFile),
+      'config/ 目录可写' => (file_exists($configLocalFile) ? is_writable($configLocalFile) : is_writable(dirname($configLocalFile))),
         'uploads/ 目录可写' => is_writable(__DIR__ . '/uploads'),
     ];
     $allPass = true;

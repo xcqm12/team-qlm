@@ -1,0 +1,30 @@
+# Operating system / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local environment and hosting overrides
+.env
+.env.*
+!.env.example
+.user.ini
+config/config.local.php
+config/*.local.php
+installed.lock
+
+# Runtime uploads (keep the placeholder file)
+uploads/*
+!uploads/index.html
+
+# Logs, caches, temp files
+*.log
+*.cache
+*.tmp
+cache/
+logs/
+temp/
+tmp/
+runtime/
+
+# PHP tooling caches
+.phpunit.result.cache

