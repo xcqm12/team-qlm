@@ -72,10 +72,15 @@ for f in "${scripts[@]}"; do
         *) printf 'FAIL  %s shebang 应为 #!/usr/bin/env bash（当前: %s）\n' "$f" "$first_line"; fail=1 ;;
       esac ;;
   esac
-  # 3) 可执行位（Windows/zip 上传后常丢失；CI 里也能提前发现）
+  # 3) 可执行位（Windows 提交、zip 解压后常丢失）
   if [ ! -x "$f" ]; then
-    printf 'WARN  %s 缺少可执行位（已尝试自动修复）\n' "$f"
-    chmod +x "$f" 2>/dev/null || printf 'FAIL  %s 无法设置可执行位\n' "$f"
+    printf 'WARN  %s 缺少可执行位（尝试自动修复；若在 git 仓库中请执行 git update-index --chmod=+x %s）\n' "$f" "$f"
+    if chmod +x "$f" 2>/dev/null; then
+      printf 'OK    已修复 %s 的可执行位\n' "$f"
+    else
+      printf 'FAIL  %s 无法设置可执行位（所在分区可能 noexec 或只读）\n' "$f"
+      fail=1
+    fi
   fi
 done
 
