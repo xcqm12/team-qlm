@@ -9,7 +9,8 @@ deploy/
 ├── bt-deploy.sh          # 宝塔面板专用：安装 → 调 bt-native.sh 落配置 → 可选 HTTPS、日志切割
 ├── bt-native.sh          # 宝塔原生部署：站点主配置交回面板 + extension 扩展规则 + http 级限流区，修复申请 SSL 报错
 ├── fix-bt-anchors.sh     # 轻量兜底：只给已有 vhost 补齐面板锚点注释
-├── update.sh             # 更新：备份 → 依赖 → 迁移 → 重建 → 重启
+├── update.sh             # 更新：备份 → 依赖 → 迁移 → 重建 → 重启 → 自检
+├── push-deploy.sh        # 发布包部署：校验 SHA256 → 备份 → 解压覆盖（排除 .env/data）→ 调 update.sh
 ├── uninstall.sh          # 卸载：停服务 → 清 nginx → 可选删数据
 ├── lib/
 │   ├── common.sh         # 日志、交互、模板渲染、脚本自愈（CRLF/权限/noexec）
@@ -21,6 +22,66 @@ deploy/
 ├── docker/               # Dockerfile + compose + 容器版 nginx
 ├── bt-plugin/            # 宝塔插件式入口（info.json + install/uninstall）
 └── tests/                # 脚本自检：语法 / LF / shebang / 权限位 + 库函数单元测试
+```
+
+## 部署与更新流程
+
+分两个脚本，各管一半：
+
+| 脚本 | 在哪跑 | 干什么 |
+| --- | --- | --- |
+| `scripts/pack-release.mjs` | **本地** | 打包发布包：强制 LF 换行、`*.sh`/`*.py` 置 0755、排除 `node_modules`/`dist`/`data`/`logs`/`.git` |
+| `deploy/push-deploy.sh` | **服务器** | 校验 SHA256 → 备份 → 解压覆盖（**排除 `.env` 与 `data`**）→ 调 `update.sh` |
+| `deploy/update.sh` | **服务器** | 备份 → 装依赖 → 数据库迁移 → 重建前端 → 重启服务 → 健康检查 |
+
+### 标准用法
+
+```bash
+# 1) 本地打包
+node scripts/pack-release.mjs
+
+# 2) 上传
+scp release/team-site-1.0.0.tar.gz <用户>@<服务器>:/tmp/
+
+# 3) 服务器上覆盖更新（安装目录 = push-deploy.sh 的上一级，无需额外传路径）
+bash /www/wwwroot/<域名>/deploy/push-deploy.sh /tmp/team-site-1.0.0.tar.gz
+
+# 常用开关
+#   --dry-run     只校验 + 预览会覆盖哪些文件，不落盘、不重启
+#   --skip-build  只更新后端
+#   --slim        构建后清理前端 node_modules
+```
+
+> Windows 上可以一条命令完成（打包 → scp → 远程部署 → 验证）：
+> `powershell -ExecutionPolicy Bypass -File F:\tuandui\deploy-to-server.ps1`
+> 加 `-DryRun` 可先空跑。
+
+### 为什么解压时要排除 `.env` 与 `data`
+
+线上运行状态（端口 / `JWT_SECRET` / 管理员口令 / 数据库 / 上传文件）**永远以服务器为准**。
+若把本地配置或空数据库覆盖上去，会出现"改端口不生效""登录密码莫名其妙变了""文件全没了"。
+`push-deploy.sh` 里对 tar 显式加了 `--exclude`，属于硬性保护。
+
+### 目录一致性（务必遵守）
+
+systemd 单元、nginx `root`、宝塔「站点路径」三者**必须指向同一个安装目录**：
+
+```
+systemd WorkingDirectory / ExecStart  →  /www/wwwroot/<域名>/backend
+nginx root                            →  /www/wwwroot/<域名>/frontend/dist
+宝塔「网站 → 站点路径 + 运行目录」      →  /www/wwwroot/<域名> + /frontend/dist
+```
+
+`install.sh` / `bt-deploy.sh` 在宝塔环境下的默认安装目录就是 `/www/wwwroot/<域名>`，
+与面板站点目录天然一致。要换目录请用 `bt-native.sh --app-dir <新目录>` 让脚本同时更新三处，
+**不要**用面板「文件」去移动或删除旧目录 —— 服务会起不来（502）。
+
+全新安装（目录还不存在）时：
+
+```bash
+mkdir -p /www/wwwroot/<域名>
+tar -xzf /tmp/team-site-1.0.0.tar.gz -C /www/wwwroot/<域名>
+bash /www/wwwroot/<域名>/deploy/bt-deploy.sh --domain <域名>
 ```
 
 ## 宝塔面板兼容性（重要）

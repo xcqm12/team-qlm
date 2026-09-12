@@ -409,10 +409,52 @@ python3 tools/healthcheck.py
 
 ## 八、更新
 
+### 已在服务器上：直接更新
+
 ```bash
 bash deploy/update.sh              # 自动：备份 → 依赖 → 迁移 → 重建 → 重启 → 自检
 bash deploy/update.sh --skip-build # 只更新后端
 bash deploy/update.sh --backup-only
+```
+
+### 从本地推代码到服务器（推荐）
+
+```bash
+# 1) 本地打包（强制 LF + 0755，排除 node_modules / dist / data / logs / .git）
+node scripts/pack-release.mjs
+
+# 2) 上传（假设安装目录是 /www/wwwroot/team.qlm.org.cn）
+scp release/team-site-1.0.0.tar.gz root@<服务器>:/tmp/
+
+# 3) 服务器上覆盖更新
+bash /www/wwwroot/team.qlm.org.cn/deploy/push-deploy.sh /tmp/team-site-1.0.0.tar.gz
+```
+
+`push-deploy.sh` 做四件事：校验 SHA256 → 备份数据库与上传文件 → 解压覆盖（**强制排除
+`backend/.env` 与 `backend/data`**，线上端口/JWT_SECRET/管理员口令/数据库/上传文件永远
+以服务器为准）→ 调用 `update.sh` 完成依赖、迁移、构建、重启、自检。
+
+```bash
+# 先空跑看看会覆盖什么，不做任何修改
+bash deploy/push-deploy.sh /tmp/team-site-1.0.0.tar.gz --dry-run
+# 只更新后端 / 构建后清理前端 node_modules
+bash deploy/push-deploy.sh /tmp/team-site-1.0.0.tar.gz --skip-build
+bash deploy/push-deploy.sh /tmp/team-site-1.0.0.tar.gz --slim
+```
+
+Windows 上有一条命令的封装（打包 → scp → 远程部署 → 验证）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File F:\tuandui\deploy-to-server.ps1
+# 加 -DryRun 先空跑；-SkipBuild / -Slim / -Domain other.com 见脚本头注释
+```
+
+**全新安装**（目标目录还不存在）时先解压再走宝塔部署：
+
+```bash
+mkdir -p /www/wwwroot/team.qlm.org.cn
+tar -xzf /tmp/team-site-1.0.0.tar.gz -C /www/wwwroot/team.qlm.org.cn
+bash /www/wwwroot/team.qlm.org.cn/deploy/bt-deploy.sh --domain team.qlm.org.cn
 ```
 
 更新是幂等的：`scripts/init-db.js` 只补建缺失的表/列（例如第三方下载需要的

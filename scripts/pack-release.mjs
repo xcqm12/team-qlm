@@ -260,20 +260,28 @@ const printCommands = (fileName) => {
   console.log(`
 把发布包上传并在远程服务器执行（任选其一）：
 
-  # A. 打包后 scp 上传 + 远程解压执行（最直观）
-  scp ${path.relative(ROOT, path.join(OUT_DIR, fileName)).replace(/\\/g, '/')} root@<服务器IP>:/tmp/
-  ssh root@<服务器IP> "tar -xzf /tmp/${fileName} -C /www/wwwroot/ && \\
-      bash /www/wwwroot/team-site/deploy/install.sh --domain <你的域名> --noninteractive"
+  # A. 推荐：上传后用 push-deploy.sh 覆盖更新（保留线上 .env 与数据库）
+  scp ${path.relative(ROOT, path.join(OUT_DIR, fileName)).replace(/\\/g, '/')} <用户>@<服务器>:/tmp/
+  ssh <用户>@<服务器> "bash <安装目录>/deploy/push-deploy.sh /tmp/${fileName}"
+  #   先看看会覆盖什么而不落盘：
+  #   bash <安装目录>/deploy/push-deploy.sh /tmp/${fileName} --dry-run
 
-  # B. 服务器上直接跑引导脚本（支持 http 下载 / git 拉取）
+  # B. 全新安装（目录还不存在时）
+  scp ${path.relative(ROOT, path.join(OUT_DIR, fileName)).replace(/\\/g, '/')} <用户>@<服务器>:/tmp/
+  ssh <用户>@<服务器> "mkdir -p /www/wwwroot/<域名> && \\
+      tar -xzf /tmp/${fileName} -C /www/wwwroot/<域名> && \\
+      bash /www/wwwroot/<域名>/deploy/bt-deploy.sh --domain <域名>"
+
+  # C. 服务器上直接跑引导脚本（支持 http 下载 / git 拉取）
   bash deploy/remote-install.sh --tarball <发布包URL> --domain <你的域名>
   bash deploy/remote-install.sh --git <仓库地址> --branch main --domain <你的域名>
 
-  # C. 一行命令（把 remote-install.sh 放到可访问地址）
-  curl -fsSL <remote-install.sh 地址> | bash -s -- --tarball <发布包URL> --domain <你的域名>
+  # D. 无 scp 时：把 tar.gz 放到可访问地址，服务器上直接拉
+  curl -fsSL <发布包URL> -o /tmp/${fileName} && \\
+      bash <安装目录>/deploy/push-deploy.sh /tmp/${fileName}
 
-  # D. 宝塔面板：面板「文件」上传发布包 → 终端执行
-  cd /www/wwwroot && tar -xzf /tmp/${fileName} && bash team-site/deploy/bt-deploy.sh --domain <你的域名>
+  # E. 宝塔面板：面板「文件」上传发布包 → 终端执行
+  bash /www/wwwroot/<域名>/deploy/push-deploy.sh /tmp/${fileName}
 `)
 }
 
