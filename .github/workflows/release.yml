@@ -44,6 +44,11 @@ jobs:
         run: |
           bash deploy/tests/check-syntax.sh
           bash deploy/tests/lib-test.sh
+      - name: 打包测试（发布包生成与校验）
+        run: |
+          node scripts/pack-release.mjs
+          VERSION="$(node -p "require('./package.json').version")"
+          node scripts/pack-release.mjs --verify "release/team-site-${VERSION}.tar.gz"
 
   build:
     name: 构建发布包并创建 Release
