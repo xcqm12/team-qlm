@@ -23,7 +23,7 @@
 # 可选参数（也支持同名环境变量）：
 #   --domain <域名>        绑定域名，生成 nginx 站点配置（默认 _ 即仅 IP 访问）
 #   --port <端口>          后端监听端口（默认 8787，被占用时自动 +1）
-#   --dir <路径>           安装目录（宝塔默认 /www/wwwroot/team-site）
+#   --dir <路径>           安装目录（宝塔默认 /www/wwwroot/<域名>，无域名时 /www/wwwroot/team-site）
 #   --service <名称>       服务名（默认 team-site）
 #   --username <用户名>    初始管理员用户名（默认 admin）
 #   --password <密码>      初始管理员密码（默认随机生成并打印）
@@ -110,7 +110,18 @@ main() {
 
   if is_baota; then
     ok "检测到宝塔面板环境，将按宝塔目录规范部署"
-    : "${INSTALL_DIR:=/www/wwwroot/team-site}"
+    # 默认装到 /www/wwwroot/<域名>，与面板「网站」列表里的站点目录保持一致：
+    #   · 面板申请证书时的文件验证路径 = 站点路径 + 运行目录，目录一致才不会
+    #     "文件写进去了但 URL 取不到"
+    #   · 避免默认值 /www/wwwroot/team-site 与面板站点目录不是同一个，
+    #     重跑一次 install.sh 就会把服务注册到另一个目录，出现"两个目录各跑一份"
+    if [ -z "${INSTALL_DIR:-}" ]; then
+      if [ -n "${DOMAIN:-}" ] && [ "$DOMAIN" != "_" ]; then
+        INSTALL_DIR="/www/wwwroot/$DOMAIN"
+      else
+        INSTALL_DIR="/www/wwwroot/team-site"
+      fi
+    fi
     BAOTA=1
   else
     : "${INSTALL_DIR:=/opt/team-site}"

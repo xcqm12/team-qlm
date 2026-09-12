@@ -35,7 +35,12 @@
         <p v-if="error" class="error">⚠️ {{ error }}</p>
 
         <p class="hint center mt-16">
-          默认账号 <code>admin</code> / <code>qlm@2019</code>，登录后请立即修改密码
+          账号 <code>admin</code>；初始密码见部署脚本输出
+          （<code>backend/.env</code> 中的 <code>ADMIN_PASSWORD</code>）
+        </p>
+        <p class="hint center mt-8 small">
+          忘记密码？在服务器上执行
+          <code>node backend/scripts/reset-password.js '新密码'</code>
         </p>
         <p class="center mt-8"><router-link to="/" class="small">← 返回站点首页</router-link></p>
       </div>

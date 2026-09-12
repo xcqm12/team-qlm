@@ -27,16 +27,22 @@
 
 ### 步骤
 
-1. **上传代码**到 `/www/wwwroot/team-site`
+1. **上传代码**到 `/www/wwwroot/<域名>`（推荐与面板「网站」里的站点目录同名，
+   例如 `/www/wwwroot/team.example.com`）
    （面板「文件」→ 上传压缩包 → 解压，或用 Git 克隆）
 2. 面板左侧「终端」中执行：
 
 ```bash
-cd /www/wwwroot/team-site
+cd /www/wwwroot/team.example.com
 bash deploy/bt-deploy.sh --domain team.example.com
 ```
 
 3. 按提示查看输出：脚本会打印前台地址、后台地址、管理员账号密码。
+
+> ⚠️ **部署目录一旦确定，不要再换，也不要用面板「文件」把旧目录删掉/移走。**
+> systemd 单元、`bt-native.sh` 写入的 nginx `root`、宝塔站点路径三者必须指向同一个目录；
+> 旧目录被移走后服务会起不来（502）。换目录请用 `bt-native.sh --app-dir`
+> 让脚本同时更新三处，不要手工操作。
 
 ### 脚本做了什么
 
@@ -160,6 +166,24 @@ bash deploy/fix-bt-anchors.sh --check  --domain team.qlm.org.cn  # 只体检不�
 | `#REWRITE-START/END`（含 include） | 面板「伪静态」写入位置，脚本会顺便创建被 include 的文件 |
 | `location ~ \.well-known { allow all; }` | Let's Encrypt 域名验证目录，缺了会导致证书申请失败 |
 
+### 忘记后台密码怎么办
+
+`install.sh` 在未指定 `--password` 时会**随机生成**初始密码，只打印一次（不再像早期版本那样固定 `qlm@2019`）。
+忘了用自带的 CLI 重置，不需要改库：
+
+```bash
+cd /www/wwwroot/<域名>/backend
+node scripts/reset-password.js '新密码'          # 直接指定
+node scripts/reset-password.js                   # 重置为 .env 里的 ADMIN_PASSWORD
+node scripts/reset-password.js --username admin --password '新密码'
+```
+
+重置后请登录后台在「修改密码」中更换，并把 `backend/.env` 的 `ADMIN_PASSWORD` 同步成新值。
+
+> 登录页**不再硬编码提示默认密码**（那会在随机口令的部署上误导操作者）。
+> 若你希望整站用一个固定初始口令，部署时显式传入：
+> `bash deploy/install.sh --domain x.com --password 'YourPass'`
+
 #### 已实测结论（team.qlm.org.cn）
 
 ```
@@ -253,7 +277,7 @@ bash deploy/tests/lib-test.sh         # 部署库函数单元测试
 | --- | --- | --- | --- |
 | `--domain` | `DOMAIN` | `_` | 绑定域名，`_` 表示仅 IP 访问 |
 | `--port` | `PORT` | 8787（占用则 +1） | 后端监听端口 |
-| `--dir` | `INSTALL_DIR` | 宝塔 `/www/wwwroot/team-site`，否则 `/opt/team-site` | 安装目录 |
+| `--dir` | `INSTALL_DIR` | 宝塔 `/www/wwwroot/<域名>`（无域名时 `/www/wwwroot/team-site`），否则 `/opt/team-site` | 安装目录 |
 | `--service` | `SERVICE_NAME` | `team-site` | 服务名 |
 | `--username` | `ADMIN_USERNAME` | `admin` | 初始管理员 |
 | `--password` | `ADMIN_PASSWORD` | 随机 | 初始密码，脚本会打印 |

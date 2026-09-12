@@ -33,7 +33,7 @@ PROJECT_SRC="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 DOMAIN="${DOMAIN:-_}"
 PORT="${PORT:-}"
-INSTALL_DIR="${INSTALL_DIR:-/www/wwwroot/team-site}"
+INSTALL_DIR="${INSTALL_DIR:-}"
 SERVICE_NAME="${SERVICE_NAME:-team-site}"
 ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
@@ -58,6 +58,12 @@ while [ $# -gt 0 ]; do
     *) die "未知参数: $1" ;;
   esac
 done
+
+# 默认安装目录跟域名走：与面板「网站」里的站点目录一致，
+# 避免默认值 /www/wwwroot/team-site 与站点目录不同名而"各跑一份"。
+if [ -z "$INSTALL_DIR" ]; then
+  if [ "$DOMAIN" != "_" ]; then INSTALL_DIR="/www/wwwroot/$DOMAIN"; else INSTALL_DIR="/www/wwwroot/team-site"; fi
+fi
 
 BT_PANEL_DIR="/www/server/panel"
 BT_NGINX_DIR="/www/server/nginx"
