@@ -25,6 +25,8 @@
 #   bash deploy/bt-native.sh --domain x.com --no-align-path  # 不改动面板站点路径/运行目录
 #   bash deploy/bt-native.sh --domain x.com --enable-ssl     # 启用已签发的证书（默认路径）
 #   bash deploy/bt-native.sh --domain x.com --disable-ssl    # 关闭 443 监听
+#   bash deploy/bt-native.sh --domain x.com --force-https    # 强制 HTTPS（自动放行 ACME 验证路径）
+#   bash deploy/bt-native.sh --domain x.com --no-force-https # 取消强制 HTTPS
 #   bash deploy/bt-native.sh --domain x.com --ssl-cert /path/fullchain.pem --ssl-key /path/privkey.pem
 #
 set -o pipefail
@@ -44,6 +46,7 @@ PORT="8787"
 ALIGN_PATH=1
 CHECK_ONLY=0
 SSL_MODE="auto"          # auto=沿用现有配置 | on=启用 | off=关闭
+FORCE_HTTPS_MODE="auto"  # auto=沿用现有配置 | on=强制跳转 | off=不跳转
 CERT_FILE=""
 KEY_FILE=""
 STAMP="$(date +%Y%m%d%H%M%S)"
@@ -63,6 +66,8 @@ while [ $# -gt 0 ]; do
     --no-align-path) ALIGN_PATH=0; shift ;;
     --enable-ssl)  SSL_MODE="on"; shift ;;
     --disable-ssl) SSL_MODE="off"; shift ;;
+    --force-https)    FORCE_HTTPS_MODE="on"; shift ;;
+    --no-force-https) FORCE_HTTPS_MODE="off"; shift ;;
     --ssl-cert) [ -n "${2:-}" ] || die "--ssl-cert 缺少取值"; CERT_FILE="$2"; shift 2 ;;
     --ssl-key)  [ -n "${2:-}" ] || die "--ssl-key 缺少取值";  KEY_FILE="$2";  shift 2 ;;
     --check)   CHECK_ONLY=1; shift ;;
@@ -121,6 +126,26 @@ if [ "$SSL_ENABLED" = "1" ]; then
   fi
 else
   log "SSL：未启用（需要时用 --enable-ssl）"
+fi
+
+# 强制 HTTPS：同样要「先读后写」，否则重跑一次就把强制跳转弄丢了
+FORCE_HTTPS_EXISTING=0
+if [ -f "$CONF" ] && grep -qF '#FORCE-HTTPS-START' "$CONF"; then
+  FORCE_HTTPS_EXISTING=1
+fi
+case "$FORCE_HTTPS_MODE" in
+  on)  FORCE_HTTPS=1 ;;
+  off) FORCE_HTTPS=0 ;;
+  auto) FORCE_HTTPS=$FORCE_HTTPS_EXISTING ;;
+esac
+if [ "$SSL_ENABLED" != "1" ]; then
+  [ "$FORCE_HTTPS" = "1" ] && warn "强制 HTTPS 需要先启用 SSL，本次忽略"
+  FORCE_HTTPS=0
+fi
+if [ "$FORCE_HTTPS" = "1" ]; then
+  log "强制 HTTPS：开启（放行 /.well-known/ 保证证书可续签）"
+else
+  log "强制 HTTPS：关闭"
 fi
 
 nginx_bin() {
@@ -186,6 +211,11 @@ check_state() {
     echo "  443 监听     : 未启用（证书就绪时可加 --enable-ssl）"
     [ -f "$DEFAULT_CERT" ] && [ -f "$DEFAULT_KEY" ] && echo "  待用证书     : $DEFAULT_CERT"
   fi
+  if [ "$FORCE_HTTPS_EXISTING" = "1" ]; then
+    echo "  强制 HTTPS   : 已开启（放行 /.well-known/）"
+  else
+    echo "  强制 HTTPS   : 未开启（需要时加 --force-https）"
+  fi
   echo
   bt_checks || problems=$((problems+1))
   echo
@@ -238,6 +268,20 @@ else
   SSL_BLOCK=""
 fi
 
+if [ "$FORCE_HTTPS" = "1" ]; then
+  # 只对 80 端口跳转：server 块同时监听 80/443，若不判断 $scheme，
+  # HTTPS 请求会被自己 301 成 HTTPS —— 死循环（curl 报 "too many redirects"）。
+  # 同时放行 /.well-known/，否则 ACME 文件验证被 301 走，证书无法自动续签。
+  FORCE_BLOCK="    #FORCE-HTTPS-START 强制 HTTPS（仅 80 跳转；放行 /.well-known/ 保证证书可续签）
+    set \$qlm_force_https \"\";
+    if (\$scheme = http) { set \$qlm_force_https \"1\"; }
+    if (\$request_uri ~ ^/\.well-known/) { set \$qlm_force_https \"\"; }
+    if (\$qlm_force_https = \"1\") { return 301 https://\$host\$request_uri; }
+    #FORCE-HTTPS-END"
+else
+  FORCE_BLOCK=""
+fi
+
 cat > "$CONF" <<EOF
 server
 {
@@ -252,6 +296,7 @@ $LISTEN_443
     # 用于SSL证书申请时的文件验证相关配置 -- 请勿删除
     include $VHOST_DIR/well-known/$DOMAIN.conf;
     #CERT-APPLY-CHECK--END
+$FORCE_BLOCK
     include $EXT_BASE/$DOMAIN/*.conf;
 
     #SSL-START SSL相关配置，请勿删除或修改下一行带注释的404规则
@@ -448,25 +493,43 @@ fi
 step "功能验证"
 PY_CHECK=""
 if command -v python3 >/dev/null 2>&1; then PY_CHECK="python3"; fi
-code_of() { curl -s -o /dev/null -w '%{http_code}' -H "Host: $DOMAIN" "http://127.0.0.1$1"; }
+# 启用 SSL 后一律走 https 探活业务内容：只测 80 的话强制 HTTPS 下全是 301，看不出真假
+PROBE_SCHEME="http"; PROBE_TLS=""
+if [ "$SSL_ENABLED" = "1" ]; then PROBE_SCHEME="https"; PROBE_TLS="-k"; fi
+code_of() { curl -s $PROBE_TLS --max-time 10 -o /dev/null -w '%{http_code}' -H "Host: $DOMAIN" "$PROBE_SCHEME://127.0.0.1$1"; }
+echo "  协议            : $PROBE_SCHEME"
 echo "  首页            : $(code_of /)"
 echo "  SPA 深链接      : $(code_of /admin/login)"
-echo -n "  API 健康检查    : "; curl -s -H "Host: $DOMAIN" http://127.0.0.1/api/health | head -c 120; echo
+echo -n "  API 健康检查    : "; curl -s $PROBE_TLS --max-time 10 -H "Host: $DOMAIN" "$PROBE_SCHEME://127.0.0.1/api/health" | head -c 120; echo
 echo "  源码目录保护    : $(code_of /backend/src/server.js)"
+echo "  资源 404        : $(code_of /assets/__nope__.js)"
 if [ "$SSL_ENABLED" = "1" ]; then
-  echo "  HTTPS           : $(curl -sk -o /dev/null -w '%{http_code}' -H "Host: $DOMAIN" https://127.0.0.1/)"
-  curl -sk -o /dev/null -D- -H "Host: $DOMAIN" https://127.0.0.1/ 2>/dev/null \
+  curl -sk --max-time 10 -o /dev/null -D- -H "Host: $DOMAIN" https://127.0.0.1/ 2>/dev/null \
     | grep -iE '^strict-transport-security' | sed 's/^/  /' || true
+fi
+if [ "$FORCE_HTTPS" = "1" ]; then
+  CODE80="$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' -H "Host: $DOMAIN" http://127.0.0.1/)"
+  LOC80="$(curl -s --max-time 10 -o /dev/null -w '%{redirect_url}' -H "Host: $DOMAIN" http://127.0.0.1/)"
+  echo "  HTTP 跳转       : $CODE80 -> $LOC80"
+  if [ "$CODE80" = "301" ] && [ "$(code_of /)" = "200" ]; then
+    ok "强制 HTTPS 生效，且 HTTPS 不再被重定向（无死循环）"
+  else
+    warn "强制 HTTPS 表现异常：80=$CODE80，443=$PROBE_SCHEME 返回 $(code_of /)"
+  fi
 fi
 
 # 文件验证往返测试：写入 token → 请求 → 清理
 TOKEN="qlm-native-$STAMP"
 mkdir -p "$DIST_DIR/.well-known/acme-challenge"
 echo "acme-token-$STAMP" > "$DIST_DIR/.well-known/acme-challenge/$TOKEN"
-SERVED="$(curl -s -H "Host: $DOMAIN" "http://127.0.0.1/.well-known/acme-challenge/$TOKEN")"
+SERVED="$(curl -s --max-time 10 -H "Host: $DOMAIN" "http://127.0.0.1/.well-known/acme-challenge/$TOKEN")"
 rm -rf "$DIST_DIR/.well-known"
 if [ "$SERVED" = "acme-token-$STAMP" ]; then
-  ok "证书文件验证往返正常（写入 token 能被 nginx 正确返回）"
+  if [ "$FORCE_HTTPS" = "1" ]; then
+    ok "证书文件验证往返正常（且强制 HTTPS 下 /.well-known 未被 301，续签可用）"
+  else
+    ok "证书文件验证往返正常（写入 token 能被 nginx 正确返回）"
+  fi
 else
   warn "证书文件验证往返异常（返回：$SERVED），请检查 root 与站点路径/运行目录是否一致"
 fi
@@ -485,13 +548,15 @@ if [ "$SSL_ENABLED" = "1" ]; then
   1) 网站 → $DOMAIN → 设置 → SSL：证书已挂上，可直接开启「强制 HTTPS」
   2) 续签仍可用「文件验证」（#CERT-APPLY-CHECK 段与 well-known include 都已保留）
 EOF
+  [ "$FORCE_HTTPS" = "1" ] && cat <<EOF
+  3) 强制 HTTPS 已由本脚本开启（HTTP 301 → HTTPS，且放行 ACME 验证路径），无需再点面板开关
+EOF
 else
   cat <<EOF
 
 下一步（宝塔面板）：
   1) 网站 → $DOMAIN → 设置 → SSL → Let's Encrypt → 勾选域名 → 申请证书
-  2) 申请成功后执行：bash deploy/bt-native.sh --domain $DOMAIN --app-dir $APP_DIR --enable-ssl
-     （或直接在面板 SSL 页开启「强制 HTTPS」，面板会自行写入）
+  2) 申请成功后执行：bash deploy/bt-native.sh --domain $DOMAIN --app-dir $APP_DIR --enable-ssl --force-https
 EOF
 fi
 

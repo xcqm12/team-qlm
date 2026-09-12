@@ -96,11 +96,13 @@ cd /www/wwwroot/team-site && /usr/bin/python3 tools/check_links.py >> logs/links
 #### 正确做法：宝塔原生接法（推荐）
 
 ```bash
-bash deploy/bt-native.sh --domain team.qlm.org.cn --app-dir /www/wwwroot/team-site
+bash deploy/bt-native.sh --domain team.qlm.org.cn --app-dir /www/wwwroot/team.qlm.org.cn
 bash deploy/bt-native.sh --domain team.qlm.org.cn --check           # 只体检
 bash deploy/bt-native.sh --domain team.qlm.org.cn --no-align-path   # 不改面板站点路径
 bash deploy/bt-native.sh --domain team.qlm.org.cn --enable-ssl      # 启用已签发的证书
 bash deploy/bt-native.sh --domain team.qlm.org.cn --disable-ssl     # 关闭 443
+bash deploy/bt-native.sh --domain team.qlm.org.cn --force-https     # 强制 HTTPS（80 → 443）
+bash deploy/bt-native.sh --domain team.qlm.org.cn --no-force-https  # 取消强制 HTTPS
 ```
 
 它把配置拆成**三层**，各归其位：
@@ -124,6 +126,14 @@ bash deploy/bt-native.sh --domain team.qlm.org.cn --disable-ssl     # 关闭 443
 **SSL 策略默认为 auto**：现有配置已启用 443 就沿用；没启用但
 `/www/server/panel/vhost/cert/<域名>/{fullchain,privkey}.pem` 已存在，也会自动挂上。
 面板里显示"证书已签发"却打不开 https，通常就是缺这一步。
+
+**强制 HTTPS 同样默认 auto**，用 `--force-https` 开启。它只对 `$scheme = http` 跳转并放行
+`/.well-known/`：站点块同时监听 80/443，不加 `$scheme` 判断会让 HTTPS 请求自己 301 自己
+（死循环）；而全量 `return 301`（面板自带实现的做法）会把 ACME 文件验证重定向走，
+导致证书永远无法自动续签。
+
+**安装目录建议直接用 `/www/wwwroot/<域名>`**，与面板站点目录一致，文件验证路径与 nginx
+`root` 天然对齐。更换目录时脚本会通过面板 API 同步站点路径与运行目录，无需手工改面板。
 
 `bt-deploy.sh --domain <域名>` 已内置这套流程（内部为 `install.sh --no-nginx` + `bt-native.sh`），全新部署无需单独执行。
 
@@ -153,12 +163,18 @@ bash deploy/fix-bt-anchors.sh --check  --domain team.qlm.org.cn  # 只体检不�
 #### 已实测结论（team.qlm.org.cn）
 
 ```
+安装目录     : /www/wwwroot/team.qlm.org.cn      面板站点路径: 同左，运行目录 /frontend/dist
 站点配置     : 有        SSL 锚点     : 有        ACME 验证块  : 有（#CERT-APPLY-CHECK）
-443 监听     : 已启用    证书         : /www/server/panel/vhost/cert/team.qlm.org.cn/fullchain.pem
+443 监听     : 已启用    强制 HTTPS   : 已开启    证书         : .../cert/team.qlm.org.cn/fullchain.pem
 基础文件验证 : 可用       if 文件验证 : 可用       PANEL_CHECK_RESULT: OK
-验证文件可回读: OK        清理后状态码: 404（期望 404）
+验证文件可回读: OK（强制 HTTPS 下未被 301）        清理后状态码: 404（期望 404）
 nginx: configuration file /www/server/nginx/conf/nginx.conf test is successful
-公网 https://team.qlm.org.cn/ -> HTTP 200，证书校验通过（ssl_verify_result=0），HSTS 已下发
+
+公网实测：
+  http://team.qlm.org.cn/   -> HTTP 301  Location: https://team.qlm.org.cn/
+  跟随跳转                  -> HTTP 200  重定向 1 次（无死循环）
+  https://team.qlm.org.cn/  -> HTTP 200  证书校验通过（ssl_verify_result=0），HSTS 已下发
+  https://.../api/health    -> HTTP 200
 ```
 
 - 安全 → 防火墙：只放行 80/443，后端 8787 端口无需对外

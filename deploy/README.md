@@ -51,19 +51,30 @@ deploy/
 7. 调用面板自身的 `can_use_base_file_check` / `can_use_if_for_file_check` 给出结论
 
 ```bash
-bash deploy/bt-native.sh --domain team.qlm.org.cn --app-dir /www/wwwroot/team-site
+bash deploy/bt-native.sh --domain team.qlm.org.cn --app-dir /www/wwwroot/team.qlm.org.cn
 bash deploy/bt-native.sh --domain team.qlm.org.cn --check           # 只体检（含面板检查）
 bash deploy/bt-native.sh --domain team.qlm.org.cn --no-align-path   # 不改面板站点路径
 bash deploy/bt-native.sh --domain team.qlm.org.cn --enable-ssl      # 启用已签发的证书（宝塔标准路径）
 bash deploy/bt-native.sh --domain team.qlm.org.cn --disable-ssl     # 关闭 443 监听
+bash deploy/bt-native.sh --domain team.qlm.org.cn --force-https     # 强制 HTTPS（80 → 443）
+bash deploy/bt-native.sh --domain team.qlm.org.cn --no-force-https  # 取消强制 HTTPS
 bash deploy/bt-native.sh --domain team.qlm.org.cn \
   --ssl-cert /path/fullchain.pem --ssl-key /path/privkey.pem        # 指定证书路径
 ```
 
-> **SSL 默认是「自动」**：现有配置已启用 443 就沿用；没启用但
+> **推荐安装目录就用 `/www/wwwroot/<域名>`**：与面板「网站」列表里的站点目录一致，
+> 面板的文件验证路径与 nginx `root` 天然对齐，少一层搬弄。
+> 换目录时 `bt-native.sh` 会通过面板 API 同步更新站点路径与运行目录。
+
+> **SSL 与强制 HTTPS 默认都是「自动」**：现有配置已启用就沿用；没启用但
 > `/www/server/panel/vhost/cert/<域名>/{fullchain,privkey}.pem` 已存在，也会自动挂上
 > （证书已签发却没生效，是漏了这一步最常见的表现）。
 > 重写配置**不会**抹掉面板签发的证书，续签所需的 `#CERT-APPLY-CHECK` 段也会保留。
+
+> **强制 HTTPS 的写法**：只对 `$scheme = http` 跳转，并放行 `/.well-known/`。
+> 站点块同时监听 80/443，若不加 `$scheme` 判断，HTTPS 请求会被自己 301 成 HTTPS ——
+> 死循环；不问青红皂白地全量 `return 301`（面板自带实现的做法）则会让 ACME
+> 文件验证被重定向走，证书永远续不上。
 
 > 若是**已经用旧模板部署过**的站点（现在面板报错），直接跑一次 `bt-native.sh` 即可修复；
 > 仅想补齐锚点而不改结构时，也可用轻量工具 `bash deploy/fix-bt-anchors.sh --domain <域名>`。
