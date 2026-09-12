@@ -37,7 +37,24 @@ export const config = {
 }
 
 config.thumbDir = path.join(config.uploadDir, 'thumbnails')
-config.version = '1.0.0'
+
+// 版本号只从项目根的 package.json 读，避免这里写死后与发布版本漂移
+// （站点设置接口 / 页脚都用它，写死过一次就再也不会自动更新了）
+const readVersion = () => {
+  for (const candidate of [
+    path.join(ROOT_DIR, '..', 'package.json'),
+    path.join(ROOT_DIR, 'package.json')
+  ]) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(candidate, 'utf8'))
+      if (pkg && pkg.version) return String(pkg.version)
+    } catch {
+      // 忽略，继续找下一个候选
+    }
+  }
+  return '0.0.0'
+}
+config.version = process.env.APP_VERSION || readVersion()
 
 export const ensureRuntimeDirs = () => {
   for (const dir of [path.dirname(config.dbFile), config.uploadDir, config.thumbDir]) {

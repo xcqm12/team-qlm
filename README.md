@@ -173,22 +173,28 @@ bash deploy/bt-deploy.sh --domain team.example.com
 
 ```bash
 # 0) 先在本地（Windows/macOS/Linux 均可）打出发布包：自动统一 LF 换行 + 0755 权限
-node scripts/pack-release.mjs            # 产物 release/team-site-1.0.0.tar.gz + .sha256
+node scripts/pack-release.mjs            # 产物 release/team-site-<version>.tar.gz + .sha256
+                                         # 版本号取自 package.json，当前为 1.1.0
 
-# 1) 上传并在服务器上执行
-scp release/team-site-1.0.0.tar.gz root@<服务器IP>:/tmp/
-ssh root@<服务器IP> "tar -xzf /tmp/team-site-1.0.0.tar.gz -C /www/wwwroot/ && \
-    bash /www/wwwroot/team-site/deploy/install.sh --domain team.example.com --noninteractive"
+# 1) 全新安装：上传 → 解压 → 宝塔原生部署（安装目录建议与面板站点目录同名）
+scp release/team-site-1.1.0.tar.gz root@<服务器IP>:/tmp/
+ssh root@<服务器IP> "mkdir -p /www/wwwroot/team.example.com && \
+    tar -xzf /tmp/team-site-1.1.0.tar.gz -C /www/wwwroot/team.example.com && \
+    bash /www/wwwroot/team.example.com/deploy/bt-deploy.sh --domain team.example.com"
+
+# 2) 更新已有部署：push-deploy.sh 会校验 SHA256 → 备份 → 覆盖（保留线上 .env 与数据库）→ 更新
+ssh root@<服务器IP> "bash /www/wwwroot/team.example.com/deploy/push-deploy.sh /tmp/team-site-1.1.0.tar.gz"
+#   先空跑不落盘：加 --dry-run；只更新后端：加 --skip-build
 
 # 或：服务器上直接跑引导脚本（支持 http 下载 / git 拉取 / SHA256 校验）
-bash deploy/remote-install.sh --tarball https://your.cdn/team-site-1.0.0.tar.gz --domain team.example.com
+bash deploy/remote-install.sh --tarball https://your.cdn/team-site-1.1.0.tar.gz --domain team.example.com
 bash deploy/remote-install.sh --git https://github.com/xxxx/xxxxx.git --branch main --domain team.example.com
 
 # 或：一行命令（把 remote-install.sh 放到任意可访问地址）
-curl -fsSL https://your.cdn/remote-install.sh | bash -s -- --tarball https://your.cdn/team-site-1.0.0.tar.gz
+curl -fsSL https://your.cdn/remote-install.sh | bash -s -- --tarball https://your.cdn/team-site-1.1.0.tar.gz
 
-# 发布包自检（校验 0755 权限位、LF 换行、必需文件）
-node scripts/pack-release.mjs --verify release/team-site-1.0.0.tar.gz
+# 发布包自检（校验 0755 权限位、LF 换行、必需文件）；不带路径时按当前版本号找产物
+node scripts/pack-release.mjs --verify
 ```
 
 ### 方式 C：通用 Linux 一键部署

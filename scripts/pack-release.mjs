@@ -286,9 +286,22 @@ const printCommands = (fileName) => {
 }
 
 const main = () => {
-  const verifyTarget = argValue('--verify', '')
+  // --verify 不跟路径时，用当前版本的默认产物名；
+  // 这样 package.json 的 pack:verify 脚本不必写死版本号（写死过一次就会与版本漂移）
+  const verifyIndex = args.indexOf('--verify')
+  const verifyTarget = verifyIndex >= 0
+    ? (args[verifyIndex + 1] && !args[verifyIndex + 1].startsWith('--')
+        ? args[verifyIndex + 1]
+        : `release/${NAME}.tar.gz`)
+    : ''
   if (verifyTarget) {
-    verifyArchive(path.resolve(ROOT, verifyTarget))
+    const target = path.resolve(ROOT, verifyTarget)
+    if (!fs.existsSync(target)) {
+      console.error(`[verify] 找不到发布包: ${verifyTarget}`)
+      console.error('[verify] 先执行 node scripts/pack-release.mjs 生成，或显式给出路径')
+      process.exit(1)
+    }
+    verifyArchive(target)
     return
   }
 

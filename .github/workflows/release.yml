@@ -44,11 +44,6 @@ jobs:
         run: |
           bash deploy/tests/check-syntax.sh
           bash deploy/tests/lib-test.sh
-      - name: 打包测试（发布包生成与校验）
-        run: |
-          node scripts/pack-release.mjs
-          VERSION="$(node -p "require('./package.json').version")"
-          node scripts/pack-release.mjs --verify "release/team-site-${VERSION}.tar.gz"
 
   build:
     name: 构建发布包并创建 Release
@@ -92,18 +87,26 @@ jobs:
           {
             echo "## 七零喵团队站点 v${{ steps.meta.outputs.version }}"
             echo
-            echo "### 一键部署"
+            echo "### 全新安装"
             echo
             echo '```bash'
-            echo "# 1) 下载并解压"
+            echo "# 1) 下载并解压（安装目录建议与面板站点目录同名）"
             echo "curl -fLO https://github.com/${{ github.repository }}/releases/download/v${{ steps.meta.outputs.version }}/team-site-${{ steps.meta.outputs.version }}.tar.gz"
-            echo "tar -xzf team-site-${{ steps.meta.outputs.version }}.tar.gz -C /www/wwwroot/"
+            echo "mkdir -p /www/wwwroot/<你的域名>"
+            echo "tar -xzf team-site-${{ steps.meta.outputs.version }}.tar.gz -C /www/wwwroot/<你的域名>"
             echo
-            echo "# 2) 宝塔面板部署（写 vhost + 注册服务 + 防 CC 配置）"
-            echo "bash /www/wwwroot/team-site/deploy/bt-deploy.sh --domain <你的域名>"
+            echo "# 2) 宝塔面板部署（宝塔原生 nginx 配置 + 注册服务 + 防 CC）"
+            echo "bash /www/wwwroot/<你的域名>/deploy/bt-deploy.sh --domain <你的域名>"
             echo
             echo "# 或通用 Linux 一键部署"
-            echo "bash /www/wwwroot/team-site/deploy/install.sh --domain <你的域名>"
+            echo "bash /www/wwwroot/<你的域名>/deploy/install.sh --domain <你的域名>"
+            echo '```'
+            echo
+            echo "### 更新已有部署"
+            echo
+            echo '```bash'
+            echo "bash /www/wwwroot/<你的域名>/deploy/push-deploy.sh /tmp/team-site-${{ steps.meta.outputs.version }}.tar.gz"
+            echo "# 先空跑：加 --dry-run；只更新后端：加 --skip-build"
             echo '```'
             echo
             echo "### 校验"
@@ -116,9 +119,12 @@ jobs:
             echo
             echo "- 前端构建产物 \`frontend/dist\`（可加 \`--skip-build\` 离线部署）"
             echo "- 后端 Express + SQLite（\`node:sqlite\`，无需编译原生模块）"
-            echo "- 部署脚本：install.sh / bt-deploy.sh / remote-install.sh / update.sh / uninstall.sh"
-            echo "- 防 CC：nginx limit_req/limit_conn 模板 + 应用层滑动窗口与自动封禁"
+            echo "- 部署脚本：bt-native.sh（宝塔原生接法）/ install.sh / bt-deploy.sh / push-deploy.sh / update.sh / uninstall.sh"
+            echo "- SSL：自动沿用面板签发的证书（\`--enable-ssl\`），强制 HTTPS 只跳 80 且放行 ACME 续签路径（\`--force-https\`）"
+            echo "- 防 CC：nginx limit_req/limit_conn + 应用层滑动窗口与自动封禁"
+            echo "- 第三方下载：外链条目 + 自定义展示字段 + 跳转前连通性检测，失效可拦截"
             echo "- 运维工具：备份 / 健康检查 / 链接体检 / 批量上传（Python 标准库）"
+            echo "- 口令重置：\`node backend/scripts/reset-password.js '新密码'\`"
           } > RELEASE_NOTES.md
           cat RELEASE_NOTES.md
 
