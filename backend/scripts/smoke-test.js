@@ -102,7 +102,7 @@ const testAntiCc = async () => {
   }
 
   try {
-    // 就绪等待（注意：health 也会计入限流窗口）
+    // 就绪等待（/api/health 已在防 CC 免统计名单内，不会消耗限流窗口）
     let ready = false
     for (let i = 0; i < 12 && !ready; i += 1) {
       try {
@@ -118,11 +118,13 @@ const testAntiCc = async () => {
     }
 
     // 先连续请求直到被限流（此时尚未登录，因此不会进入信任名单）
+    // 注意：这里刻意用 /api/files 而不是 /api/health —— 存活探针已被加入防 CC
+    // 免统计名单（否则部署与监控会被误拦），拿它做限流用例永远打不出 429。
     let blocked = null
     let attempts = 0
     while (attempts < 40 && !blocked) {
       attempts += 1
-      const res = await plain('/api/health')
+      const res = await plain('/api/files')
       if (res.status === 429) blocked = res
       else if (res.status !== 200) {
         fail('防 CC：限流响应', `意外状态 ${res.status}: ${res.text.slice(0, 100)}`)
@@ -142,10 +144,16 @@ const testAntiCc = async () => {
     }
 
     // 封禁期内普通请求继续被拒
-    const duringBan = await plain('/api/health')
+    const duringBan = await plain('/api/files')
     duringBan.status === 429
       ? pass('防 CC：封禁期内持续拦截', `HTTP 429（${duringBan.json?.message || ''}）`)
       : fail('防 CC：封禁期内持续拦截', `HTTP ${duringBan.status}`)
+
+    // 存活探针不受封禁影响（部署与监控都依赖它）
+    const healthDuringBan = await plain('/api/health')
+    healthDuringBan.status === 200
+      ? pass('防 CC：封禁期内探针仍可达', 'GET /api/health → 200（不被限流/封禁影响）')
+      : fail('防 CC：封禁期内探针仍可达', `HTTP ${healthDuringBan.status}`)
 
     // 关键：登录接口不受 CC 封禁影响（否则管理员被误封后无法自救）
     const login = await plain('/api/auth/login', {
@@ -169,7 +177,7 @@ const testAntiCc = async () => {
     // 登录成功的 IP 自动进入信任名单 → 不再被限流
     const trustedHits = []
     for (let i = 0; i < 20; i += 1) {
-      const res = await plain('/api/health')
+      const res = await plain('/api/files')
       trustedHits.push(res.status)
     }
     trustedHits.every((code) => code === 200)

@@ -246,9 +246,20 @@ ALLOWED_ORIGINS=
 PUBLIC_FILE_LIST=1
 TRUST_PROXY=1
 EOF
-    chmod 600 "$env_file"
-    ok "已生成 ${env_file}"
   fi
+
+  # .env 必须让「服务运行用户」读得到。
+  # 这里踩过一个很隐蔽的坑：脚本以 root 运行，写出的 .env 若保持 root:root 600，
+  # 而服务以 www 运行，dotenv 读不到文件会**静默回落到代码默认值**——
+  # 表现为端口/上传上限不生效，最严重的是 JWT_SECRET 变成公开的默认字符串，
+  # 任何人都能伪造管理员令牌。所以属主必须是运行用户，权限 600。
+  local env_owner; env_owner="$(determine_run_user)"
+  chown "$env_owner":"$env_owner" "$env_file" 2>/dev/null || true
+  chmod 600 "$env_file"
+  if [ "$(stat -c '%U' "$env_file" 2>/dev/null)" != "$env_owner" ]; then
+    warn "无法把 .env 属主改为 ${env_owner}，请手动执行：chown ${env_owner}:${env_owner} ${env_file}"
+  fi
+  ok "已生成 ${env_file}（属主 ${env_owner}，权限 600）"
 
   step "安装后端依赖（无需编译原生模块）"
   ( cd "${INSTALL_DIR}/backend" && npm install --no-audit --no-fund --omit=optional --loglevel=error ) \

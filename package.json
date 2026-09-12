@@ -1,6 +1,6 @@
 {
   "name": "team-site",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "七零喵团队站点 - Vue3 前端 + Node.js 后端 + SQLite 文件库，支持宝塔一键部署",
   "engines": {

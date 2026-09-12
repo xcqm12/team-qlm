@@ -145,15 +145,40 @@ find_free_port() {
 
 wait_for_http() {
   # wait_for_http URL 超时秒数
-  local url="$1" timeout="${2:-30}" i=0
+  # 失败时把最后一次的观测结果写进 LAST_HTTP_STATUS / LAST_HTTP_ERROR，
+  # 否则"健康检查失败"这句话几乎没有排查价值（分不清是没起来、500 还是被限流）
+  local url="$1" timeout="${2:-30}" i=0 code err
+  LAST_HTTP_STATUS=""; LAST_HTTP_ERROR=""
   while [ "$i" -lt "$timeout" ]; do
-    if has_cmd curl && curl -fsS --max-time 2 "$url" >/dev/null 2>&1; then
-      return 0
+    if has_cmd curl; then
+      code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "$url" 2>/dev/null)"
+      err="$?"
+      LAST_HTTP_STATUS="$code"
+      if [ "$err" -eq 0 ] && [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
+        return 0
+      fi
+      case "$err" in
+        7)   LAST_HTTP_ERROR="连接被拒绝（服务未监听）" ;;
+        28)  LAST_HTTP_ERROR="请求超时" ;;
+        0)   LAST_HTTP_ERROR="HTTP $code" ;;
+        *)   LAST_HTTP_ERROR="curl 退出码 $err" ;;
+      esac
+    else
+      LAST_HTTP_ERROR="未安装 curl"
+      # 没有 curl 时退化为纯端口探测
+      if has_cmd bash && (exec 3<>"/dev/tcp/127.0.0.1/$(printf '%s' "$url" | sed -n 's#.*:\([0-9]*\)/.*#\1#p')") 2>/dev/null; then
+        return 0
+      fi
     fi
     sleep 1
     i=$((i + 1))
   done
   return 1
+}
+
+# 供 update.sh 在失败时打印诊断（依赖上面 wait_for_http 设置的变量）
+describe_http_failure() {
+  printf '%s' "${LAST_HTTP_ERROR:-未知原因}（最后状态码 ${LAST_HTTP_STATUS:-无}）"
 }
 
 render_template() {

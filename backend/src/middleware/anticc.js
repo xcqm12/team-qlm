@@ -172,8 +172,11 @@ if (typeof cleanupTimer.unref === 'function') cleanupTimer.unref()
  *   · /auth/login：有独立的严格限流（10 分钟 20 次）防爆破，且必须保证管理员
  *     在被封禁时仍能登录（登录成功后该 IP 会自动进入信任名单）——否则会出现
  *     "把自己封在门外、登录接口也被拦、无法解封"的死锁
+ *   · /health：存活探针，`deploy/update.sh`、`tools/healthcheck.py`、外部监控都靠它。
+ *     它本身无副作用、不碰数据库；一旦被限流或封禁，部署会报"健康检查失败"、
+ *     监控会误报宕机，而真正的服务其实好着——排查成本极高。
  */
-const SKIP_PATHS = new Set(['/auth/login'])
+const SKIP_PATHS = new Set(['/auth/login', '/health'])
 
 export const anticc = (req, res, next) => {
   const cfg = getAntiCcConfig()

@@ -89,7 +89,11 @@ main() {
   if has_cmd curl && wait_for_http "http://127.0.0.1:${port}/api/health" 40; then
     ok "服务已恢复，健康检查通过"
   else
-    err "健康检查失败，请查看日志：journalctl -u ${SERVICE_NAME} -n 80 --no-pager"
+    err "健康检查失败：$(describe_http_failure)"
+    err "  目标 http://127.0.0.1:${port}/api/health（端口取自 backend/.env 的 PORT）"
+    err "  若状态码是 429：说明反 CC 把本机也拦了，可执行 systemctl kill -s SIGUSR1 ${SERVICE_NAME} 清空封禁"
+    err "  服务日志：journalctl -u ${SERVICE_NAME} -n 80 --no-pager"
+    err "  应用日志：tail -50 ${INSTALL_DIR}/logs/team-site.log"
     exit 1
   fi
 

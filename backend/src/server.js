@@ -1,6 +1,6 @@
 /** 服务入口：建表 → 初始化管理员 → 种子数据 → 启动 HTTP 服务 */
 import { createApp } from './app.js'
-import { config } from './config.js'
+import { assertSecureConfig, config } from './config.js'
 import { closeDb, get, migrate } from './db/index.js'
 import { seedDatabase } from './db/seed.js'
 import { clearAllBans, clearTrusted, getAntiCcStats } from './middleware/anticc.js'
@@ -8,6 +8,10 @@ import { ensureAdminUser } from './middleware/auth.js'
 import { humanSize } from './services/storage.js'
 
 const bootstrap = () => {
+  // 先做安全断言：生产环境若 .env 没读到（JWT_SECRET 回落到公开默认值），
+  // 立即以清晰报错退出，而不是"看起来正常但人人可伪造管理员令牌"
+  assertSecureConfig()
+
   migrate()
 
   const admin = ensureAdminUser()
