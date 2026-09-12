@@ -125,10 +125,11 @@ main() {
 
   if [ "$DOMAIN" != "_" ]; then
     step "配置 nginx（宝塔原生接法：扩展目录 + 锚点 + 防 CC）"
-    bash "${SCRIPT_DIR}/bt-native.sh" \
-      --domain "$DOMAIN" \
-      --app-dir "$INSTALL_DIR" \
-      --port "$PORT" || warn "bt-native.sh 执行失败，请查看上方输出"
+    local nt_args=(--domain "$DOMAIN" --app-dir "$INSTALL_DIR" --port "$PORT")
+    # 显式给出证书时直接让 bt-native.sh 一次写进 #SSL-START 段
+    [ -n "$SSL_CERT" ] && [ -n "$SSL_KEY" ] && nt_args+=(--ssl-cert "$SSL_CERT" --ssl-key "$SSL_KEY")
+    bash "${SCRIPT_DIR}/bt-native.sh" "${nt_args[@]}" \
+      || warn "bt-native.sh 执行失败，请查看上方输出"
   fi
 
   step "宝塔面板收尾配置"
@@ -157,69 +158,24 @@ EOF
   fi
 }
 
+# SSL 统一由 bt-native.sh 负责（写进 #SSL-START 段，同时保留面板锚点与 ACME 段）。
+# 这里不再自己做配置手术：旧实现用 awk 在 "^server {" 后注入，既匹配不到 bt-native 的
+# 换行风格，又会追加一个 return 301 的 server 块——那会让 Let's Encrypt 的文件验证
+# 永远失败（/.well-known 被重定向走），是典型的"越修越坏"。
 configure_bt_ssl() {
+  [ "$DOMAIN" != "_" ] || { dim "未绑定域名，跳过 HTTPS 配置"; return 0; }
   [ -n "$SSL_CERT" ] && [ -n "$SSL_KEY" ] || {
-    dim "未指定 --ssl-cert/--ssl-key，跳过 HTTPS 配置（可在宝塔面板「SSL」中一键申请 Let's Encrypt 证书）"
+    dim "未指定 --ssl-cert/--ssl-key；证书可在面板「SSL」申请后执行："
+    dim "  bash deploy/bt-native.sh --domain $DOMAIN --app-dir $INSTALL_DIR --enable-ssl"
     return 0
   }
   [ -f "$SSL_CERT" ] || { warn "证书文件不存在: $SSL_CERT"; return 0; }
   [ -f "$SSL_KEY" ] || { warn "私钥文件不存在: $SSL_KEY"; return 0; }
 
-  local conf
-  for candidate in "${BT_VHOST_DIR}/${DOMAIN}.conf" "${BT_VHOST_DIR}/${SERVICE_NAME}.conf"; do
-    [ -f "$candidate" ] && { conf="$candidate"; break; }
-  done
-  [ -n "${conf:-}" ] || { warn "未找到 vhost 配置文件，无法注入 SSL"; return 0; }
-
-  step "启用 HTTPS（${DOMAIN}）"
-  backup_file "$conf"
-  local tmp="${conf}.ssl.tmp"
-  awk -v cert="$SSL_CERT" -v key="$SSL_KEY" '
-    BEGIN { inserted = 0 }
-    /^server \{/ && inserted == 0 {
-      print
-      print "    listen 443 ssl http2;"
-      print "    listen [::]:443 ssl http2;"
-      print "    ssl_certificate     " cert ";"
-      print "    ssl_certificate_key " key ";"
-      print "    ssl_protocols TLSv1.2 TLSv1.3;"
-      print "    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;"
-      print "    ssl_prefer_server_ciphers on;"
-      print "    ssl_session_cache shared:SSL:10m;"
-      print "    ssl_session_timeout 10m;"
-      print "    add_header Strict-Transport-Security \"max-age=31536000\" always;"
-      inserted = 1
-      next
-    }
-    { print }
-  ' "$conf" > "$tmp"
-
-  # 追加 HTTP 跳转 HTTPS 的 server 块
-  cat >> "$tmp" <<EOF
-
-server {
-    listen 80;
-    listen [::]:80;
-    server_name ${DOMAIN};
-    return 301 https://\$host\$request_uri;
-}
-EOF
-  mv "$tmp" "$conf"
-
-  local bin; bin="$(nginx_bin)"
-  if [ -x "$bin" ] && "$bin" -t >/dev/null 2>&1; then
-    reload_nginx && ok "HTTPS 已启用并重载 Nginx"
-  else
-    err "HTTPS 配置校验失败，正在回滚"
-    local latest_backup
-    latest_backup="$(ls -t "${conf}".bak.* 2>/dev/null | head -n1 || true)"
-    if [ -n "$latest_backup" ]; then
-      cp "$latest_backup" "$conf"
-      dim "已回滚到 ${latest_backup}"
-    fi
-    "$bin" -t || true
-    return 1
-  fi
+  step "启用 HTTPS（证书写入 #SSL-START 段，保持面板可管理）"
+  bash "${SCRIPT_DIR}/bt-native.sh" \
+    --domain "$DOMAIN" --app-dir "$INSTALL_DIR" --port "$PORT" \
+    --ssl-cert "$SSL_CERT" --ssl-key "$SSL_KEY" || { warn "启用 HTTPS 失败"; return 1; }
 }
 
 print_bt_tasks() {
