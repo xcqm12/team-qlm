@@ -364,6 +364,30 @@ setup_nginx() {
 
   local body_limit_mb=$(( MAX_UPLOAD_SIZE / 1024 / 1024 + 1 ))
   local target="${conf_dir}/${conf_name}"
+
+  # ------------------------------------------------------------------
+  # 宝塔面板兼容：面板给站点加 SSL / 改伪静态时，会在 vhost 里找锚点注释
+  # （#SSL-START、#error_page 404/404.html;、#REWRITE-START…），并根据
+  # #REWRITE-START 段里的 include 写入伪静态规则。因此需要：
+  #   1) 模板中保留这些锚点（见 deploy/nginx/team-site.conf）
+  #   2) 预先创建 include 指向的伪静态文件，否则 nginx -t 会因文件不存在而失败
+  # ------------------------------------------------------------------
+  local rewrite_include="    # 未绑定域名，跳过宝塔伪静态引用"
+  if [ "$DOMAIN" != "_" ]; then
+    if [ -d /www/server/panel/vhost ] || [ "${BAOTA:-0}" = "1" ]; then
+      local rewrite_dir="/www/server/panel/vhost/rewrite"
+      ensure_dir "$rewrite_dir"
+      if [ ! -f "${rewrite_dir}/${DOMAIN}.conf" ]; then
+        printf '# 由 deploy/install.sh 创建：宝塔面板「伪静态」写入此处\n# 本站为前端 SPA，路由回退已在 vhost 中通过 try_files 处理\n' \
+          > "${rewrite_dir}/${DOMAIN}.conf"
+        dim "已创建宝塔伪静态文件: ${rewrite_dir}/${DOMAIN}.conf"
+      fi
+      rewrite_include="    include ${rewrite_dir}/${DOMAIN}.conf;"
+    else
+      rewrite_include="    # 非宝塔环境，跳过伪静态引用"
+    fi
+  fi
+
   cp "${SCRIPT_DIR}/nginx/team-site.conf" "$target"
   sed -i \
     -e "s|__DOMAIN__|${DOMAIN}|g" \
@@ -372,7 +396,12 @@ setup_nginx() {
     -e "s|__UPLOAD_DIR__|${INSTALL_DIR}/backend/data/uploads|g" \
     -e "s|__CLIENT_MAX_BODY__|${body_limit_mb}m|g" \
     -e "s|__SERVICE_NAME__|${SERVICE_NAME}|g" \
+    -e "s|__REWRITE_INCLUDE__|${rewrite_include}|g" \
     "$target"
+  # 模板必须包含宝塔锚点，否则面板申请 SSL 会报「未找到标识信息」
+  if ! grep -qF '#error_page 404/404.html;' "$target"; then
+    warn "配置缺少宝塔 SSL 锚点，可用 deploy/fix-bt-anchors.sh --domain ${DOMAIN} 修复"
+  fi
   chmod 644 "$target"
   ok "配置文件: ${target}"
 

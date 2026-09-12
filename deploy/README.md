@@ -7,19 +7,47 @@ deploy/
 ├── install.sh            # 通用一键部署（推荐入口，自动识别发行版）
 ├── remote-install.sh     # 远程引导：下载/克隆 → 校验 → 修权限与换行 → 调用 install.sh
 ├── bt-deploy.sh          # 宝塔面板专用：写入 vhost、可选 HTTPS、日志切割
+├── fix-bt-anchors.sh     # 修复宝塔 SSL 报错：给已有 vhost 补齐面板锚点注释
 ├── update.sh             # 更新：备份 → 依赖 → 迁移 → 重建 → 重启
 ├── uninstall.sh          # 卸载：停服务 → 清 nginx → 可选删数据
 ├── lib/
 │   ├── common.sh         # 日志、交互、模板渲染、脚本自愈（CRLF/权限/noexec）
 │   ├── detect-os.sh      # 发行版/包管理器/服务管理器探测（核心适配层）
 │   └── install-node.sh   # Node.js >= 22.5 自动安装（5 级回退策略）
-├── systemd/              # systemd 服务模板
+├── systemd/              # systemd 服务模板（端口由 .env 决定，不在此硬编码）
 ├── initd/                # SysV init 模板（无 systemd 的系统，如 Alpine）
-├── nginx/                # nginx 站点模板（含上传目录防执行策略）
+├── nginx/                # nginx 站点模板（宝塔锚点 + 防 CC + 上传目录防执行）
 ├── docker/               # Dockerfile + compose + 容器版 nginx
 ├── bt-plugin/            # 宝塔插件式入口（info.json + install/uninstall）
 └── tests/                # 脚本自检：语法 / LF / shebang / 权限位 + 库函数单元测试
 ```
+
+## 宝塔面板兼容性（重要）
+
+宝塔面板在给站点 **申请 SSL / 修改伪静态** 时，会在 vhost 配置里查找它约定的锚点注释：
+
+```nginx
+#SSL-START SSL相关配置，请勿删除或修改下一行带注释的404规则
+#error_page 404/404.html;
+#SSL-END
+#ERROR-PAGE-START … #ERROR-PAGE-END
+#REWRITE-START … include /www/server/panel/vhost/rewrite/<域名>.conf; … #REWRITE-END
+```
+
+缺少这些锚点时，面板会报：**「站点配置文件中未找到标识信息【#error_page 404/404.html;】，无法确定 SSL 配置添加位置」**。
+
+本项目的 `nginx/team-site.conf` 模板已经内置这些锚点，并且 `install.sh` 会预先创建
+`/www/server/panel/vhost/rewrite/<域名>.conf`（否则 `include` 会让 `nginx -t` 失败）。
+
+**已经用旧模板部署过、现在面板报错的站点**，执行一次修复即可（幂等、带备份与校验回滚）：
+
+```bash
+bash deploy/fix-bt-anchors.sh --domain team.qlm.org.cn     # 按域名
+bash deploy/fix-bt-anchors.sh --root   /www/wwwroot/team-site  # 按站点目录自动匹配
+bash deploy/fix-bt-anchors.sh --check --domain team.qlm.org.cn # 只体检
+```
+
+修完后回到面板：网站 → 该站点 → 设置 → SSL → 申请证书并开启「强制 HTTPS」。
 
 > 配套的发布打包器在仓库根目录：`node scripts/pack-release.mjs`（生成带 0755 权限与 LF 换行的 tar.gz，
 > 并提供 `--verify` 自检），远程部署用它会省去换行与权限的坑。

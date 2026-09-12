@@ -78,6 +78,35 @@ cd /www/wwwroot/team-site && /usr/bin/python3 tools/healthcheck.py --quiet >> lo
 cd /www/wwwroot/team-site && /usr/bin/python3 tools/check_links.py >> logs/links.log 2>&1
 ```
 
+### 面板报「未找到标识信息【#error_page 404/404.html;】」怎么办
+
+这是**宝塔面板加 SSL 时找不到插入位置**的提示：面板会在 vhost 里查找它约定的锚点注释
+（`#SSL-START` / `#error_page 404/404.html;` / `#REWRITE-START` …），而自定义 nginx 模板如果
+没带这些锚点，面板就无法写入 SSL 指令。
+
+本项目的 `deploy/nginx/team-site.conf` 模板已内置这些锚点，`install.sh` 还会预先创建
+`/www/server/panel/vhost/rewrite/<域名>.conf`（`#REWRITE-START` 段里的 include 指向它，缺了会让 `nginx -t` 失败）。
+
+已经用旧模板部署过、现在面板报错的站点，执行一次修复（幂等、自动备份、`nginx -t` 失败会回滚）：
+
+```bash
+bash deploy/fix-bt-anchors.sh --domain team.qlm.org.cn        # 按域名修复
+bash deploy/fix-bt-anchors.sh --root   /www/wwwroot/team-site # 按站点目录自动匹配
+bash deploy/fix-bt-anchors.sh --check  --domain team.qlm.org.cn  # 只体检不改动
+```
+
+修复脚本会补齐：
+
+| 锚点 | 作用 |
+| --- | --- |
+| `#SSL-START` … `#error_page 404/404.html;` … `#SSL-END` | 面板写入 SSL 证书配置的位置（**报错就是缺这个**） |
+| `#ERROR-PAGE-START/END` | 面板「错误页」设置写入位置 |
+| `#PHP-INFO-START/END` | 面板 PHP 引用位置（本站为 Node，占位保留） |
+| `#REWRITE-START/END`（含 include） | 面板「伪静态」写入位置，脚本会顺便创建被 include 的文件 |
+| `location ~ \.well-known { allow all; }` | Let's Encrypt 域名验证目录，缺了会导致证书申请失败 |
+
+修完后回面板：**网站 → 该站点 → 设置 → SSL → Let's Encrypt → 申请并开启「强制 HTTPS」**。
+
 - 安全 → 防火墙：只放行 80/443，后端 8787 端口无需对外
 - 若要在面板「网站」列表里管理该站点：新建同名站点并指向 `frontend/dist`，或直接在面板中改反向代理
 

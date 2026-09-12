@@ -20,6 +20,7 @@ scripts=(
   deploy/install.sh
   deploy/bt-deploy.sh
   deploy/remote-install.sh
+  deploy/fix-bt-anchors.sh
   deploy/update.sh
   deploy/uninstall.sh
   deploy/tests/check-syntax.sh
