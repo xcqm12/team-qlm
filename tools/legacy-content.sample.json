@@ -1,0 +1,114 @@
+{
+  "_comment": "内容导入模板：字段均可选，slug 与 name 用于幂等更新。可直接编辑后执行 python3 tools/import_legacy.py tools/legacy-content.sample.json",
+  "settings": {
+    "site_name": "七零喵团队",
+    "site_slogan": "你们的支持，我们的努力。",
+    "contact_email": "qlm@qlm.org.cn",
+    "founded_at": "2019-11-11"
+  },
+  "projects": [
+    {
+      "slug": "super-hi-vision",
+      "title": "高级超高清屏幕录制工具",
+      "category": "Super_Hi_Vision",
+      "version": "v1.5.0",
+      "summary": "高级超高清屏幕录制工具 —— 基于 PyQt5 构建的现代化界面屏幕录制软件。",
+      "content": "## 项目简介\n\nSuper_Hi_Vision 是团队自研的高级超高清屏幕录制工具。\n\n## 核心特性\n\n- 超高清录制\n- 现代化界面\n- 区域选择录制\n",
+      "tags": "录屏,PyQt5,工具",
+      "repo_url": "https://github.com/",
+      "external_url": "",
+      "status": "published",
+      "sort_order": 1
+    },
+    {
+      "slug": "the-dead-craft",
+      "title": "制作死者",
+      "category": "其他",
+      "version": "v1.19.x-1.21.x",
+      "summary": "一个为 Minecraft 带来丧尸末日生存体验的 Forge 模组。",
+      "content": "## 项目简介\n\n为 Minecraft 带来丧尸末日生存体验的 Forge 模组。\n",
+      "tags": "Minecraft,Forge,模组",
+      "status": "published",
+      "sort_order": 2
+    }
+  ],
+  "news": [
+    {
+      "slug": "studio-renamed-2022",
+      "title": "工作室更名公告 · 2022年7月",
+      "category": "动态",
+      "summary": "工作室更名，由星辰工作室更名为七零喵团队。",
+      "content": "## 更名公告\n\n自 2022 年 7 月起，原「星辰工作室」正式更名为「七零喵团队」。\n",
+      "status": "published",
+      "published_at": "2022-07-01 10:00:00"
+    }
+  ],
+  "members": [
+    {
+      "name": "zasta",
+      "role": "室长 / 创始人",
+      "skills": "地图制作，测试",
+      "bio": "2019 年 1 月创立工作室，现任室长。",
+      "joined_at": "2019-01",
+      "sort_order": 1
+    }
+  ],
+  "external_files": [
+    {
+      "_comment": "第三方（外链）下载条目：文件不存放在本站，前台显示『第三方』标识并提供跳转按钮；下列字段全部可选可自定义",
+      "original_name": "团队站点源码 · GitHub Releases",
+      "external_url": "https://github.com/xxxx/xxxxx/releases",
+      "provider": "GitHub Releases",
+      "provider_icon": "🐙",
+      "button_label": "去 Release 页",
+      "tags": "官方,开源,MIT",
+      "access_code": "",
+      "size_hint": "不定",
+      "category": "第三方下载",
+      "version": "v1.0.0",
+      "sort_order": 100,
+      "open_in_new_tab": 1,
+      "show_url": 1,
+      "extras": {
+        "授权": "MIT",
+        "附件数": "3",
+        "校验": "SHA256 见 Release 说明"
+      },
+      "description": "每个版本的源码与构建产物都发布在 GitHub Releases，点击按钮直接前往下载页。",
+      "is_public": 1
+    },
+    {
+      "original_name": "制作死者 · CurseForge 发布页",
+      "external_url": "https://www.curseforge.com/",
+      "provider": "CurseForge",
+      "provider_icon": "🔥",
+      "button_label": "前往 CurseForge",
+      "tags": "模组",
+      "access_code": "",
+      "size_hint": "第三方平台",
+      "category": "第三方下载",
+      "version": "v1.19.x-1.21.x",
+      "sort_order": 10,
+      "extras": "平台=CurseForge\n支持版本=1.19.x-1.21.x",
+      "description": "模组发布在 CurseForge，点击前往平台页面获取最新版本。",
+      "is_public": 1
+    },
+    {
+      "original_name": "高级超高清屏幕录制工具 · 百度网盘",
+      "external_url": "https://pan.baidu.com/s/XXXXXXXXXXXX",
+      "provider": "百度网盘",
+      "provider_icon": "☁️",
+      "button_label": "去网盘下载",
+      "tags": "网盘,镜像",
+      "access_code": "qlm1",
+      "size_hint": "1.2 GB",
+      "category": "第三方下载",
+      "version": "v1.5.0",
+      "sort_order": 0,
+      "show_url": 0,
+      "extras": "解压密码=qlm\n含=安装包+更新日志",
+      "description": "网盘分流下载，提取码见卡片；不显示原始链接。",
+      "is_public": 1
+    }
+  ]
+}

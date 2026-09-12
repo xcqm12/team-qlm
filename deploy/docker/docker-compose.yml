@@ -1,0 +1,70 @@
+# 七零喵团队站点 · Docker 一键启动
+#
+# 用法：
+#   cd deploy/docker
+#   DOMAIN=team.example.com docker compose up -d --build
+#   docker compose logs -f backend
+#
+# 说明：
+#   · backend 容器内置前端静态资源，nginx 容器只做反代与静态分发
+#   · 数据（SQLite + 上传文件）持久化在命名卷 team-site-data 中
+#   · 首次启动会自动建表并写入初始内容与管理员账号
+
+services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: team-site-backend:1.0.0
+    container_name: team-site-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8787
+      HOST: 0.0.0.0
+      DB_FILE: /data/team-site.db
+      UPLOAD_DIR: /data/uploads
+      # 生产环境请改成随机字符串
+      JWT_SECRET: ${JWT_SECRET:-change-me-please-use-random-secret}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-qlm@2019}
+      MAX_UPLOAD_SIZE: ${MAX_UPLOAD_SIZE:-209715200}
+      TRUST_PROXY: 1
+    volumes:
+      - team-site-data:/data
+      - team-site-logs:/app/logs
+    networks:
+      - team-site
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: team-site-nginx
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - team-site-logs:/var/log/nginx
+      # 上传文件由 nginx 直接分发（只读挂载，性能更好）
+      - team-site-data:/data:ro
+    networks:
+      - team-site
+
+volumes:
+  team-site-data:
+    name: team-site-data
+  team-site-logs:
+    name: team-site-logs
+
+networks:
+  team-site:
+    name: team-site

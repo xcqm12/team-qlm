@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: 后端测试（冒烟 + 老库升级）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: 安装后端依赖
+        working-directory: backend
+        run: npm install --omit=optional --no-audit --no-fund
+      - name: 老库升级测试（旧表结构 → 自动补列）
+        working-directory: backend
+        run: npm run test:migration
+      - name: 端到端冒烟测试
+        working-directory: backend
+        run: npm run smoke
+      - name: 数据库概览
+        working-directory: backend
+        run: npm run db:stats
+        continue-on-error: true
+
+  frontend:
+    name: 前端检查（类型 + 构建）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+      - name: TypeScript 类型检查
+        working-directory: frontend
+        run: npm run typecheck || npx vue-tsc --noEmit
+      - name: 生产构建
+        working-directory: frontend
+        run: npm run build:only
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 7
+
+  deploy-scripts:
+    name: 部署脚本与工具自检
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: 脚本语法 / LF / shebang / 权限位检查
+        run: bash deploy/tests/check-syntax.sh
+      - name: 部署库单元测试
+        run: bash deploy/tests/lib-test.sh
+      - name: Python 工具语法检查
+        run: |
+          python3 -m py_compile tools/*.py
+          echo "Python 工具语法检查通过"
+      - name: 打包发布包并校验（含 0755 权限与 LF 换行）
+        run: |
+          node scripts/pack-release.mjs
+          node scripts/pack-release.mjs --verify release/team-site-*.tar.gz
+      - name: 上传发布包
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: release/*
+          retention-days: 7

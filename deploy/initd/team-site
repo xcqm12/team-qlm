@@ -1,0 +1,64 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          __SERVICE_NAME__
+# Required-Start:    $network $local_fs
+# Required-Stop:     $network $local_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: 七零喵团队站点后端
+# Description:       Node.js API + 文件上传服务（适用于无 systemd 的系统，如 Alpine、部分容器）
+### END INIT INFO
+
+APP_DIR="__APP_DIR__"
+NODE_BIN="__NODE_BIN__"
+RUN_USER="__RUN_USER__"
+PID_FILE="/var/run/__SERVICE_NAME__.pid"
+LOG_DIR="${APP_DIR}/logs"
+# 端口由 ${APP_DIR}/backend/.env 决定（不在本脚本中硬编码，避免改配置不生效）
+
+is_running() {
+  [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null
+}
+
+start_service() {
+  if is_running; then
+    echo "__SERVICE_NAME__ already running (pid $(cat "$PID_FILE"))"
+    return 0
+  fi
+  mkdir -p "$LOG_DIR"
+  if [ -d "${APP_DIR}/backend/data" ]; then
+    chown -R "${RUN_USER}:${RUN_USER}" "${APP_DIR}/backend/data" "$LOG_DIR" 2>/dev/null || true
+  fi
+  cd "${APP_DIR}/backend" || exit 1
+  # 不注入 PORT：让 backend/.env 成为端口唯一来源（dotenv 不会覆盖已存在的环境变量）
+  if command -v su >/dev/null 2>&1 && [ "$(id -u)" = "0" ] && [ "${RUN_USER}" != "root" ]; then
+    su -s /bin/sh -c "NODE_ENV=production nohup ${NODE_BIN} ${APP_DIR}/backend/src/server.js >> ${LOG_DIR}/team-site.log 2>&1 & echo \$! > ${PID_FILE}" "${RUN_USER}"
+  else
+    NODE_ENV=production nohup "${NODE_BIN}" "${APP_DIR}/backend/src/server.js" >> "${LOG_DIR}/team-site.log" 2>&1 &
+    echo $! > "$PID_FILE"
+  fi
+  sleep 1
+  is_running && echo "__SERVICE_NAME__ started" || { echo "__SERVICE_NAME__ failed to start"; return 1; }
+}
+
+stop_service() {
+  if is_running; then
+    kill "$(cat "$PID_FILE")" 2>/dev/null
+    sleep 2
+    is_running && kill -9 "$(cat "$PID_FILE")" 2>/dev/null
+    rm -f "$PID_FILE"
+    echo "__SERVICE_NAME__ stopped"
+  else
+    echo "__SERVICE_NAME__ not running"
+  fi
+}
+
+case "$1" in
+  start)   start_service ;;
+  stop)    stop_service ;;
+  restart) stop_service; start_service ;;
+  status)
+    if is_running; then echo "__SERVICE_NAME__ running (pid $(cat "$PID_FILE"))"; exit 0
+    else echo "__SERVICE_NAME__ stopped"; exit 3; fi ;;
+  *) echo "Usage: $0 {start|stop|restart|status}"; exit 2 ;;
+esac

@@ -1,0 +1,16 @@
+# Docker 构建上下文排除项（保持镜像构建上下文精简）
+.git
+.gitignore
+**/node_modules
+**/dist
+backups
+logs
+*.log
+backend/data
+deploy/docker
+docs
+*.md
+!README.md
+.DS_Store
+.env
+backend/.env

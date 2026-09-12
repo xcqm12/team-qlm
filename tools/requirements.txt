@@ -1,0 +1,8 @@
+# Python 工具链依赖
+#
+# 除缩略图生成外，其余脚本仅使用 Python 标准库，无需安装任何包。
+# 只有 tools/make_thumbnails.py 需要 Pillow：
+#
+#   pip3 install -r tools/requirements.txt
+#
+Pillow>=9.0.0

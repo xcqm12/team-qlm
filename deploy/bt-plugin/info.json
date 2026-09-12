@@ -1,0 +1,44 @@
+{
+  "name": "team-site",
+  "title": "七零喵团队站点",
+  "description": "Vue3 + Node.js + SQLite 团队官网：项目作品、新闻动态、文件上传下载与后台管理，支持一键部署与宝塔适配。",
+  "version": "1.0.0",
+  "author": "七零喵团队",
+  "home": "https://team.qlm.org.cn/",
+  "type": "web",
+  "os_support": [
+    "debian",
+    "ubuntu",
+    "centos",
+    "rhel",
+    "rocky",
+    "almalinux",
+    "fedora",
+    "openeuler",
+    "alpine",
+    "opensuse",
+    "arch"
+  ],
+  "require": {
+    "node": ">=22.5.0",
+    "python": ">=3.8 (可选，用于运维脚本)",
+    "nginx": "可选，推荐",
+    "mysql": false,
+    "sqlite": "内置 node:sqlite，无需额外安装"
+  },
+  "ports": {
+    "backend_default": 8787
+  },
+  "install_script": "install.sh",
+  "uninstall_script": "uninstall.sh",
+  "update_script": "update.sh",
+  "features": [
+    "Vue3 单页前台：首页 / 关于 / 项目作品 / 新闻动态 / 文件下载 / 联系我们",
+    "Node.js + Express API，SQLite 持久化，无原生模块依赖",
+    "文件上传、分类、搜索、在线预览、下载计数",
+    "JWT 登录 + scrypt 口令散列 + 限流 + 操作审计",
+    "后台内容管理：文件 / 项目 / 动态 / 成员 / 留言 / 站点设置",
+    "Python 运维工具：健康检查 / 备份 / 批量上传 / 旧站内容导入",
+    "一键部署脚本适配主流 Linux 变种，并可写入宝塔 vhost"
+  ]
+}

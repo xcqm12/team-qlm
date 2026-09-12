@@ -1,0 +1,34 @@
+[Unit]
+Description=七零喵团队站点后端 (__SERVICE_NAME__)
+Documentation=file://__APP_DIR__/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__RUN_USER__
+Group=__RUN_USER__
+WorkingDirectory=__APP_DIR__/backend
+Environment=NODE_ENV=production
+# 注意：这里刻意不设置 PORT —— 端口统一由 __APP_DIR__/backend/.env 决定
+# （systemd 的环境变量优先级高于 .env，若在此硬编码会导致"改 .env 不生效"，
+#   也是更新时端口漂移的根源。需要换端口请改 .env 或执行 install.sh --port NNNN）
+ExecStart=__NODE_BIN__ __APP_DIR__/backend/src/server.js
+Restart=always
+RestartSec=3
+StandardOutput=append:__APP_DIR__/logs/team-site.log
+StandardError=append:__APP_DIR__/logs/team-site.error.log
+
+# 安全加固（不影响正常功能）
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=__APP_DIR__/backend/data __APP_DIR__/logs
+
+# 资源限制：防止异常时拖垮整机
+LimitNOFILE=65535
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target

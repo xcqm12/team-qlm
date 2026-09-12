@@ -1,0 +1,134 @@
+name: Release
+
+# 自动发布：打 tag（如 v1.0.1）自动跑测试 → 打包 → 创建 GitHub Release 并附上发布包
+# 也可在 Actions 页面手动触发（workflow_dispatch），可指定版本号
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 版本号（留空则读取 package.json 的 version）
+        required: false
+        default: ''
+      prerelease:
+        description: 标记为预发布
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: 发布前测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: 后端依赖
+        working-directory: backend
+        run: npm install --omit=optional --no-audit --no-fund
+      - name: 老库升级测试
+        working-directory: backend
+        run: npm run test:migration
+      - name: 冒烟测试
+        working-directory: backend
+        run: npm run smoke
+      - name: 部署脚本自检
+        run: |
+          bash deploy/tests/check-syntax.sh
+          bash deploy/tests/lib-test.sh
+
+  build:
+    name: 构建发布包并创建 Release
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 解析版本号
+        id: meta
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(node -p "require('./package.json').version")"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "版本号：$VERSION"
+
+      - name: 安装前端依赖并构建（发布包内含 dist，便于离线部署）
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build:only
+
+      - name: 生成发布包（统一 LF 换行 + 0755 权限，含前端产物）
+        run: |
+          node scripts/pack-release.mjs --with-dist --name team-site-${{ steps.meta.outputs.version }}
+          node scripts/pack-release.mjs --verify release/team-site-${{ steps.meta.outputs.version }}.tar.gz
+
+      - name: 生成 Release Notes
+        run: |
+          {
+            echo "## 七零喵团队站点 v${{ steps.meta.outputs.version }}"
+            echo
+            echo "### 一键部署"
+            echo
+            echo '```bash'
+            echo "# 1) 下载并解压"
+            echo "curl -fLO https://github.com/${{ github.repository }}/releases/download/v${{ steps.meta.outputs.version }}/team-site-${{ steps.meta.outputs.version }}.tar.gz"
+            echo "tar -xzf team-site-${{ steps.meta.outputs.version }}.tar.gz -C /www/wwwroot/"
+            echo
+            echo "# 2) 宝塔面板部署（写 vhost + 注册服务 + 防 CC 配置）"
+            echo "bash /www/wwwroot/team-site/deploy/bt-deploy.sh --domain <你的域名>"
+            echo
+            echo "# 或通用 Linux 一键部署"
+            echo "bash /www/wwwroot/team-site/deploy/install.sh --domain <你的域名>"
+            echo '```'
+            echo
+            echo "### 校验"
+            echo
+            echo '```bash'
+            echo "sha256sum -c team-site-${{ steps.meta.outputs.version }}.tar.gz.sha256"
+            echo '```'
+            echo
+            echo "### 本包内容"
+            echo
+            echo "- 前端构建产物 \`frontend/dist\`（可加 \`--skip-build\` 离线部署）"
+            echo "- 后端 Express + SQLite（\`node:sqlite\`，无需编译原生模块）"
+            echo "- 部署脚本：install.sh / bt-deploy.sh / remote-install.sh / update.sh / uninstall.sh"
+            echo "- 防 CC：nginx limit_req/limit_conn 模板 + 应用层滑动窗口与自动封禁"
+            echo "- 运维工具：备份 / 健康检查 / 链接体检 / 批量上传（Python 标准库）"
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: 七零喵团队站点 v${{ steps.meta.outputs.version }}
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: ${{ github.event.inputs.prerelease || false }}
+          generate_release_notes: true
+          files: |
+            release/team-site-${{ steps.meta.outputs.version }}.tar.gz
+            release/team-site-${{ steps.meta.outputs.version }}.tar.gz.sha256
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

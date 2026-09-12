@@ -1,0 +1,47 @@
+{
+  "name": "team-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "七零喵团队站点 - Vue3 前端 + Node.js 后端 + SQLite 文件库，支持宝塔一键部署",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.js",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "build:fast": "npm --prefix frontend run build:only",
+    "start": "npm --prefix backend start",
+    "db:init": "npm --prefix backend run db:init",
+    "db:seed": "npm --prefix backend run db:seed",
+    "db:reset": "npm --prefix backend run db:reset",
+    "smoke": "npm --prefix backend run smoke",
+    "test:migration": "npm --prefix backend run test:migration",
+    "pack": "node scripts/pack-release.mjs",
+    "pack:with-dist": "node scripts/pack-release.mjs --with-dist",
+    "pack:verify": "node scripts/pack-release.mjs --verify release/team-site-1.0.0.tar.gz",
+    "db:stats": "npm --prefix backend run db:stats",
+    "check-links": "python3 tools/check_links.py",
+    "install:backend": "npm --prefix backend install --omit=optional",
+    "install:frontend": "npm --prefix frontend install",
+    "install:all": "npm run install:backend && npm run install:frontend",
+    "typecheck": "node frontend/node_modules/vue-tsc/bin/vue-tsc.js --noEmit",
+    "healthcheck": "python3 tools/healthcheck.py",
+    "backup": "python3 tools/backup.py --keep 14 --json",
+    "deploy": "bash deploy/install.sh",
+    "deploy:bt": "bash deploy/bt-deploy.sh",
+    "deploy:remote": "bash deploy/remote-install.sh",
+    "update": "bash deploy/update.sh",
+    "uninstall": "bash deploy/uninstall.sh",
+    "test:deploy": "bash deploy/tests/check-syntax.sh && bash deploy/tests/lib-test.sh"
+  },
+  "keywords": [
+    "vue3",
+    "express",
+    "sqlite",
+    "team-site",
+    "baota"
+  ],
+  "license": "MIT"
+}
