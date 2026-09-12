@@ -6,8 +6,9 @@
 deploy/
 ├── install.sh            # 通用一键部署（推荐入口，自动识别发行版）
 ├── remote-install.sh     # 远程引导：下载/克隆 → 校验 → 修权限与换行 → 调用 install.sh
-├── bt-deploy.sh          # 宝塔面板专用：写入 vhost、可选 HTTPS、日志切割
-├── fix-bt-anchors.sh     # 修复宝塔 SSL 报错：给已有 vhost 补齐面板锚点注释
+├── bt-deploy.sh          # 宝塔面板专用：安装 → 调 bt-native.sh 落配置 → 可选 HTTPS、日志切割
+├── bt-native.sh          # 宝塔原生部署：站点主配置交回面板 + extension 扩展规则 + http 级限流区，修复申请 SSL 报错
+├── fix-bt-anchors.sh     # 轻量兜底：只给已有 vhost 补齐面板锚点注释
 ├── update.sh             # 更新：备份 → 依赖 → 迁移 → 重建 → 重启
 ├── uninstall.sh          # 卸载：停服务 → 清 nginx → 可选删数据
 ├── lib/

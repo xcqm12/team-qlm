@@ -49,9 +49,12 @@ bash deploy/bt-deploy.sh --domain team.example.com
 | 5 | 初始化 SQLite 数据库并写入站点初始内容 |
 | 6 | 构建前端 `frontend/dist` |
 | 7 | 注册并启动 `team-site` 服务（systemd，安全加固 + 内存上限 1G） |
-| 8 | 写入 `/www/server/panel/vhost/nginx/<域名>.conf` 并重载 Nginx |
-| 9 | 安装 `/etc/logrotate.d/team-site` 日志切割 |
-| 10 | 打印宝塔「计划任务」推荐命令 |
+| 8 | 调 `bt-native.sh` 写入**宝塔原生三层配置**并重载 Nginx（站点主配置 + extension 扩展规则 + http 级限流区） |
+| 9 | 对齐面板「站点路径/运行目录」与 nginx `root`，做 ACME 证书验证往返测试 |
+| 10 | 安装 `/etc/logrotate.d/team-site` 日志切割 |
+| 11 | 打印宝塔「计划任务」推荐命令 |
+
+> 第 8~9 步是**面板申请 SSL 能否成功的关键**，详见下方「面板报 SSL 相关错误怎么办」。
 
 ### 可选：直接启用 HTTPS
 
@@ -78,34 +81,74 @@ cd /www/wwwroot/team-site && /usr/bin/python3 tools/healthcheck.py --quiet >> lo
 cd /www/wwwroot/team-site && /usr/bin/python3 tools/check_links.py >> logs/links.log 2>&1
 ```
 
-### 面板报「未找到标识信息【#error_page 404/404.html;】」怎么办
+### 面板报 SSL 相关错误怎么办
 
-这是**宝塔面板加 SSL 时找不到插入位置**的提示：面板会在 vhost 里查找它约定的锚点注释
-（`#SSL-START` / `#error_page 404/404.html;` / `#REWRITE-START` …），而自定义 nginx 模板如果
-没带这些锚点，面板就无法写入 SSL 指令。
+宝塔申请证书时会做两类校验，**两种报错对应两个不同原因**：
 
-本项目的 `deploy/nginx/team-site.conf` 模板已内置这些锚点，`install.sh` 还会预先创建
-`/www/server/panel/vhost/rewrite/<域名>.conf`（`#REWRITE-START` 段里的 include 指向它，缺了会让 `nginx -t` 失败）。
+| 面板报错 | 真正原因 |
+| --- | --- |
+| 未找到标识信息【`#error_page 404/404.html;`】，无法确定 SSL 配置添加位置 | vhost 里缺面板锚点注释（`#SSL-START` / `#error_page 404/404.html;` / `#REWRITE-START` …） |
+| **配置文件被修改不支持文件验证**，请选择其他方式或还原配置文件 | 面板 `acme_v2.can_use_base_file_check()` 还要求配置里有 `location ~ \.well-known{`，或在其 `#error_page 404/404.html;` **之前** include 面板的 `well-known/<域名>.conf`；此外证书验证文件写入路径 = **站点路径 + 运行目录**，必须与 nginx `root` 完全一致，否则文件写进去了但 URL 取不到 |
 
-已经用旧模板部署过、现在面板报错的站点，执行一次修复（幂等、自动备份、`nginx -t` 失败会回滚）：
+> 只补锚点能治好第一种报错，**治不好第二种**。第二种必须让面板承认「这是它自己管的配置」。
+
+#### 正确做法：宝塔原生接法（推荐）
 
 ```bash
-bash deploy/fix-bt-anchors.sh --domain team.qlm.org.cn        # 按域名修复
-bash deploy/fix-bt-anchors.sh --root   /www/wwwroot/team-site # 按站点目录自动匹配
+bash deploy/bt-native.sh --domain team.qlm.org.cn --app-dir /www/wwwroot/team-site
+bash deploy/bt-native.sh --domain team.qlm.org.cn --check          # 只体检
+bash deploy/bt-native.sh --domain team.qlm.org.cn --no-align-path  # 不改面板站点路径
+```
+
+它把配置拆成**三层**，各归其位：
+
+```
+/www/server/panel/vhost/nginx/<域名>.conf                             ← 宝塔标准结构（锚点齐全，交回面板管理）
+/www/server/panel/vhost/nginx/extension/<域名>/10-qlm-node-site.conf  ← 我们的规则：/api 反代、/uploads、SPA 回退、限流
+/www/server/panel/vhost/nginx/0.qlm-anticc.conf                       ← http 级 limit_req_zone / limit_conn_zone
+```
+
+执行流程：
+
+1. 按宝塔标准结构重写站点配置（保留全部锚点 + `location ~ \.well-known`，供面板 SSL / 伪静态 / 错误页使用）
+2. 业务规则写入宝塔**官方扩展目录** —— 扩展文件里**不能写 `root`**，与站点配置重复会报 `"root" directive is duplicate`
+3. 防 CC 的 `limit_req_zone` 只写在 http 级文件里 —— 站点配置里再声明同名 zone 会报 `is already bound`
+4. 通过面板 API 把「站点路径 + 运行目录」对齐到 nginx `root`（**文件验证能通过的关键**）
+5. `nginx -t` 失败自动回滚；成功后做一次「写入 token → 请求回读 → 清理」的证书验证往返测试
+6. 调用面板自身的 `can_use_base_file_check` / `can_use_if_for_file_check` 给出结论
+
+`bt-deploy.sh --domain <域名>` 已内置这套流程（内部为 `install.sh --no-nginx` + `bt-native.sh`），全新部署无需单独执行。
+
+修完后回面板：**网站 → 该站点 → 设置 → SSL → Let's Encrypt → 申请证书 → 开启「强制 HTTPS」**。
+
+#### 轻量兜底：只补齐锚点
+
+如果只是缺锚点、不想动配置结构（幂等、自动备份、`nginx -t` 失败回滚）：
+
+```bash
+bash deploy/fix-bt-anchors.sh --domain team.qlm.org.cn           # 按域名修复
+bash deploy/fix-bt-anchors.sh --root   /www/wwwroot/team-site    # 按站点目录自动匹配
 bash deploy/fix-bt-anchors.sh --check  --domain team.qlm.org.cn  # 只体检不改动
 ```
 
-修复脚本会补齐：
+补齐的锚点及作用：
 
 | 锚点 | 作用 |
 | --- | --- |
-| `#SSL-START` … `#error_page 404/404.html;` … `#SSL-END` | 面板写入 SSL 证书配置的位置（**报错就是缺这个**） |
+| `#SSL-START` … `#error_page 404/404.html;` … `#SSL-END` | 面板写入 SSL 证书配置的位置（**第一种报错就是缺这个**） |
 | `#ERROR-PAGE-START/END` | 面板「错误页」设置写入位置 |
 | `#PHP-INFO-START/END` | 面板 PHP 引用位置（本站为 Node，占位保留） |
 | `#REWRITE-START/END`（含 include） | 面板「伪静态」写入位置，脚本会顺便创建被 include 的文件 |
 | `location ~ \.well-known { allow all; }` | Let's Encrypt 域名验证目录，缺了会导致证书申请失败 |
 
-修完后回面板：**网站 → 该站点 → 设置 → SSL → Let's Encrypt → 申请并开启「强制 HTTPS」**。
+#### 已实测结论（team.qlm.org.cn）
+
+```
+基础文件验证 : 可用        if 文件验证 : 可用
+PANEL_CHECK_RESULT: OK
+验证文件可回读: OK         清理后状态码: 404（期望 404）
+nginx: configuration file /www/server/nginx/conf/nginx.conf test is successful
+```
 
 - 安全 → 防火墙：只放行 80/443，后端 8787 端口无需对外
 - 若要在面板「网站」列表里管理该站点：新建同名站点并指向 `frontend/dist`，或直接在面板中改反向代理
