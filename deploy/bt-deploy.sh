@@ -112,13 +112,24 @@ main() {
   [ -n "$ADMIN_PASSWORD" ] || ADMIN_PASSWORD="$(random_secret | cut -c1-16)"
 
   step "调用通用安装流程（宝塔目录规范）"
-  # 复用 install.sh 的全部逻辑，只覆盖宝塔相关路径
+  # 绑定域名时：不要在 install.sh 里写 nginx 配置（自定义模板会让面板 SSL/文件验证报错），
+  # 改用 bt-native.sh 的「宝塔原生接法」：站点配置保持宝塔标准结构，业务规则放扩展目录。
   local args=(--noninteractive --dir "$INSTALL_DIR" --service "$SERVICE_NAME"
               --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD" --port "$PORT")
-  if [ "$DOMAIN" != "_" ]; then args+=(--domain "$DOMAIN"); fi
+  if [ "$DOMAIN" != "_" ]; then
+    args+=(--domain "$DOMAIN" --no-nginx)
+  fi
   DOMAIN="$DOMAIN" PORT="$PORT" INSTALL_DIR="$INSTALL_DIR" SERVICE_NAME="$SERVICE_NAME" \
   ADMIN_USERNAME="$ADMIN_USERNAME" ADMIN_PASSWORD="$ADMIN_PASSWORD" \
     bash "${SCRIPT_DIR}/install.sh" "${args[@]}"
+
+  if [ "$DOMAIN" != "_" ]; then
+    step "配置 nginx（宝塔原生接法：扩展目录 + 锚点 + 防 CC）"
+    bash "${SCRIPT_DIR}/bt-native.sh" \
+      --domain "$DOMAIN" \
+      --app-dir "$INSTALL_DIR" \
+      --port "$PORT" || warn "bt-native.sh 执行失败，请查看上方输出"
+  fi
 
   step "宝塔面板收尾配置"
   configure_bt_logrotate

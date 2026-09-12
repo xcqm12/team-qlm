@@ -19,6 +19,7 @@ cd "$ROOT_DIR" || exit 1
 scripts=(
   deploy/install.sh
   deploy/bt-deploy.sh
+  deploy/bt-native.sh
   deploy/remote-install.sh
   deploy/fix-bt-anchors.sh
   deploy/update.sh
