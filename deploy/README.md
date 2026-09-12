@@ -42,23 +42,34 @@ deploy/
 
 `bt-deploy.sh --domain <域名>` 会自动走这套流程（内部调用 `install.sh --no-nginx` + `bt-native.sh`），它会：
 
-1. 按宝塔标准结构重写站点配置（保留全部锚点，供面板 SSL / 伪静态 / 错误页使用）
-2. 把 Node 业务规则写入宝塔官方扩展目录（**注意不能写 `root`**，与站点配置重复会报 `root directive is duplicate`）
-3. 把防 CC 的 `limit_req_zone` 写入 http 级文件（**站点配置里不能再声明同名 zone**，否则报 `already bound`）
-4. 通过面板 API 对齐「站点路径 + 运行目录」与 nginx `root`（这是文件验证能通过的关键）
-5. `nginx -t` 失败自动回滚；成功后做一次「写入 token → 请求 → 清理」的证书验证往返测试
-6. 调用面板自身的 `can_use_base_file_check` / `can_use_if_for_file_check` 给出结论
+1. 按宝塔标准结构重写站点配置（保留全部锚点与 `#CERT-APPLY-CHECK` 段，供面板 SSL / 伪静态 / 错误页使用）
+2. **保留已启用的 SSL**：重写前先读出 `listen 443`、证书路径等，否则面板刚签发的证书会被静默抹掉
+3. 把 Node 业务规则写入宝塔官方扩展目录（**注意不能写 `root`**，与站点配置重复会报 `root directive is duplicate`）
+4. 把防 CC 的 `limit_req_zone` 写入 http 级文件（**站点配置里不能再声明同名 zone**，否则报 `already bound`）
+5. 通过面板 API 对齐「站点路径 + 运行目录」与 nginx `root`（这是文件验证能通过的关键）
+6. `nginx -t` 失败自动回滚；成功后做一次「写入 token → 请求 → 清理」的证书验证往返测试 + HTTPS 探活
+7. 调用面板自身的 `can_use_base_file_check` / `can_use_if_for_file_check` 给出结论
 
 ```bash
 bash deploy/bt-native.sh --domain team.qlm.org.cn --app-dir /www/wwwroot/team-site
-bash deploy/bt-native.sh --domain team.qlm.org.cn --check      # 只体检（含面板检查）
-bash deploy/bt-native.sh --domain team.qlm.org.cn --no-align-path  # 不改面板站点路径
+bash deploy/bt-native.sh --domain team.qlm.org.cn --check           # 只体检（含面板检查）
+bash deploy/bt-native.sh --domain team.qlm.org.cn --no-align-path   # 不改面板站点路径
+bash deploy/bt-native.sh --domain team.qlm.org.cn --enable-ssl      # 启用已签发的证书（宝塔标准路径）
+bash deploy/bt-native.sh --domain team.qlm.org.cn --disable-ssl     # 关闭 443 监听
+bash deploy/bt-native.sh --domain team.qlm.org.cn \
+  --ssl-cert /path/fullchain.pem --ssl-key /path/privkey.pem        # 指定证书路径
 ```
+
+> **SSL 默认是「自动」**：现有配置已启用 443 就沿用；没启用但
+> `/www/server/panel/vhost/cert/<域名>/{fullchain,privkey}.pem` 已存在，也会自动挂上
+> （证书已签发却没生效，是漏了这一步最常见的表现）。
+> 重写配置**不会**抹掉面板签发的证书，续签所需的 `#CERT-APPLY-CHECK` 段也会保留。
 
 > 若是**已经用旧模板部署过**的站点（现在面板报错），直接跑一次 `bt-native.sh` 即可修复；
 > 仅想补齐锚点而不改结构时，也可用轻量工具 `bash deploy/fix-bt-anchors.sh --domain <域名>`。
 
-修完后回面板：**网站 → 该站点 → 设置 → SSL → Let's Encrypt → 申请证书 → 开启「强制 HTTPS」**。
+修完后回面板：**网站 → 该站点 → 设置 → SSL**。证书已挂上时直接开「强制 HTTPS」即可；
+还没申请就点 **Let's Encrypt → 申请证书**，随后 `--enable-ssl` 或面板上开启。
 
 > 配套的发布打包器在仓库根目录：`node scripts/pack-release.mjs`（生成带 0755 权限与 LF 换行的 tar.gz，
 > 并提供 `--verify` 自检），远程部署用它会省去换行与权限的坑。

@@ -88,7 +88,8 @@ cd /www/wwwroot/team-site && /usr/bin/python3 tools/check_links.py >> logs/links
 | 面板报错 | 真正原因 |
 | --- | --- |
 | 未找到标识信息【`#error_page 404/404.html;`】，无法确定 SSL 配置添加位置 | vhost 里缺面板锚点注释（`#SSL-START` / `#error_page 404/404.html;` / `#REWRITE-START` …） |
-| **配置文件被修改不支持文件验证**，请选择其他方式或还原配置文件 | 面板 `acme_v2.can_use_base_file_check()` 还要求配置里有 `location ~ \.well-known{`，或在其 `#error_page 404/404.html;` **之前** include 面板的 `well-known/<域名>.conf`；此外证书验证文件写入路径 = **站点路径 + 运行目录**，必须与 nginx `root` 完全一致，否则文件写进去了但 URL 取不到 |
+| **配置文件被修改不支持文件验证**，请选择其他方式或还原配置文件 | 面板 `acme_v2.can_use_base_file_check()` 还要求配置里有 `location ~ \.well-known{`，或在其 `#error_page 404/404.html;` **之前** include 面板的 `well-known/<域名>.conf`（并被 `#CERT-APPLY-CHECK--START/END` 包裹）；此外证书验证文件写入路径 = **站点路径 + 运行目录**，必须与 nginx `root` 完全一致，否则文件写进去了但 URL 取不到 |
+| 面板里证书显示已签发，但 **https 打不开**（443 拒绝连接） | 站点配置里没有 `listen 443 ssl` / `ssl_certificate`——证书文件在，只是没挂上（自定义模板整体覆盖配置时最常见） |
 
 > 只补锚点能治好第一种报错，**治不好第二种**。第二种必须让面板承认「这是它自己管的配置」。
 
@@ -96,8 +97,10 @@ cd /www/wwwroot/team-site && /usr/bin/python3 tools/check_links.py >> logs/links
 
 ```bash
 bash deploy/bt-native.sh --domain team.qlm.org.cn --app-dir /www/wwwroot/team-site
-bash deploy/bt-native.sh --domain team.qlm.org.cn --check          # 只体检
-bash deploy/bt-native.sh --domain team.qlm.org.cn --no-align-path  # 不改面板站点路径
+bash deploy/bt-native.sh --domain team.qlm.org.cn --check           # 只体检
+bash deploy/bt-native.sh --domain team.qlm.org.cn --no-align-path   # 不改面板站点路径
+bash deploy/bt-native.sh --domain team.qlm.org.cn --enable-ssl      # 启用已签发的证书
+bash deploy/bt-native.sh --domain team.qlm.org.cn --disable-ssl     # 关闭 443
 ```
 
 它把配置拆成**三层**，各归其位：
@@ -110,16 +113,22 @@ bash deploy/bt-native.sh --domain team.qlm.org.cn --no-align-path  # 不改面�
 
 执行流程：
 
-1. 按宝塔标准结构重写站点配置（保留全部锚点 + `location ~ \.well-known`，供面板 SSL / 伪静态 / 错误页使用）
-2. 业务规则写入宝塔**官方扩展目录** —— 扩展文件里**不能写 `root`**，与站点配置重复会报 `"root" directive is duplicate`
-3. 防 CC 的 `limit_req_zone` 只写在 http 级文件里 —— 站点配置里再声明同名 zone 会报 `is already bound`
-4. 通过面板 API 把「站点路径 + 运行目录」对齐到 nginx `root`（**文件验证能通过的关键**）
-5. `nginx -t` 失败自动回滚；成功后做一次「写入 token → 请求回读 → 清理」的证书验证往返测试
-6. 调用面板自身的 `can_use_base_file_check` / `can_use_if_for_file_check` 给出结论
+1. 按宝塔标准结构重写站点配置（保留全部锚点、`location ~ \.well-known` 与 `#CERT-APPLY-CHECK--START/END` 段）
+2. **保留已启用的 SSL** —— 重写前先读出 `listen 443` / `ssl_certificate`，避免把面板刚签发的证书配置整体抹掉
+3. 业务规则写入宝塔**官方扩展目录** —— 扩展文件里**不能写 `root`**，与站点配置重复会报 `"root" directive is duplicate`
+4. 防 CC 的 `limit_req_zone` 只写在 http 级文件里 —— 站点配置里再声明同名 zone 会报 `is already bound`
+5. 通过面板 API 把「站点路径 + 运行目录」对齐到 nginx `root`（**文件验证能通过的关键**）
+6. `nginx -t` 失败自动回滚；成功后做「写入 token → 请求回读 → 清理」往返测试 + HTTPS 探活
+7. 调用面板自身的 `can_use_base_file_check` / `can_use_if_for_file_check` 给出结论
+
+**SSL 策略默认为 auto**：现有配置已启用 443 就沿用；没启用但
+`/www/server/panel/vhost/cert/<域名>/{fullchain,privkey}.pem` 已存在，也会自动挂上。
+面板里显示"证书已签发"却打不开 https，通常就是缺这一步。
 
 `bt-deploy.sh --domain <域名>` 已内置这套流程（内部为 `install.sh --no-nginx` + `bt-native.sh`），全新部署无需单独执行。
 
-修完后回面板：**网站 → 该站点 → 设置 → SSL → Let's Encrypt → 申请证书 → 开启「强制 HTTPS」**。
+修完后回面板：**网站 → 该站点 → 设置 → SSL**。证书已挂上就直接开「强制 HTTPS」；
+尚未申请则点 **Let's Encrypt → 申请证书**，之后 `--enable-ssl` 或面板开启。
 
 #### 轻量兜底：只补齐锚点
 
@@ -144,10 +153,12 @@ bash deploy/fix-bt-anchors.sh --check  --domain team.qlm.org.cn  # 只体检不�
 #### 已实测结论（team.qlm.org.cn）
 
 ```
-基础文件验证 : 可用        if 文件验证 : 可用
-PANEL_CHECK_RESULT: OK
-验证文件可回读: OK         清理后状态码: 404（期望 404）
+站点配置     : 有        SSL 锚点     : 有        ACME 验证块  : 有（#CERT-APPLY-CHECK）
+443 监听     : 已启用    证书         : /www/server/panel/vhost/cert/team.qlm.org.cn/fullchain.pem
+基础文件验证 : 可用       if 文件验证 : 可用       PANEL_CHECK_RESULT: OK
+验证文件可回读: OK        清理后状态码: 404（期望 404）
 nginx: configuration file /www/server/nginx/conf/nginx.conf test is successful
+公网 https://team.qlm.org.cn/ -> HTTP 200，证书校验通过（ssl_verify_result=0），HSTS 已下发
 ```
 
 - 安全 → 防火墙：只放行 80/443，后端 8787 端口无需对外

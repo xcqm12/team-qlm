@@ -15,11 +15,17 @@
 #     /www/server/panel/vhost/nginx/extension/<域名>/10-qlm-node-site.conf  ← 我们的代理/SPA/限流规则
 #     /www/server/panel/vhost/nginx/0.qlm-anticc.conf                 ← http 级限流区（limit_req/limit_conn）
 #
+#   本脚本重写站点主配置时会**保留已启用的 SSL**（listen 443 + 证书路径 + HSTS 等），
+#   不会把面板刚签发的证书配置抹掉；证书文件已存在但尚未启用时，用 --enable-ssl 启用。
+#
 # 用法：
 #   bash deploy/bt-native.sh --domain team.qlm.org.cn --app-dir /www/wwwroot/team-site
 #   bash deploy/bt-native.sh --domain x.com --app-dir /www/wwwroot/x --port 8787
 #   bash deploy/bt-native.sh --domain x.com --check          # 只体检（含面板自身检查）
 #   bash deploy/bt-native.sh --domain x.com --no-align-path  # 不改动面板站点路径/运行目录
+#   bash deploy/bt-native.sh --domain x.com --enable-ssl     # 启用已签发的证书（默认路径）
+#   bash deploy/bt-native.sh --domain x.com --disable-ssl    # 关闭 443 监听
+#   bash deploy/bt-native.sh --domain x.com --ssl-cert /path/fullchain.pem --ssl-key /path/privkey.pem
 #
 set -o pipefail
 
@@ -37,6 +43,9 @@ APP_DIR=""
 PORT="8787"
 ALIGN_PATH=1
 CHECK_ONLY=0
+SSL_MODE="auto"          # auto=沿用现有配置 | on=启用 | off=关闭
+CERT_FILE=""
+KEY_FILE=""
 STAMP="$(date +%Y%m%d%H%M%S)"
 
 step() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
@@ -52,6 +61,10 @@ while [ $# -gt 0 ]; do
     --app-dir) [ -n "${2:-}" ] || die "--app-dir 缺少取值"; APP_DIR="$2"; shift 2 ;;
     --port)    [ -n "${2:-}" ] || die "--port 缺少取值"; PORT="$2"; shift 2 ;;
     --no-align-path) ALIGN_PATH=0; shift ;;
+    --enable-ssl)  SSL_MODE="on"; shift ;;
+    --disable-ssl) SSL_MODE="off"; shift ;;
+    --ssl-cert) [ -n "${2:-}" ] || die "--ssl-cert 缺少取值"; CERT_FILE="$2"; shift 2 ;;
+    --ssl-key)  [ -n "${2:-}" ] || die "--ssl-key 缺少取值";  KEY_FILE="$2";  shift 2 ;;
     --check)   CHECK_ONLY=1; shift ;;
     -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "未知参数: $1（--help 查看用法）" ;;
@@ -70,6 +83,45 @@ DIST_DIR="$APP_DIR/frontend/dist"
 UPLOAD_DIR="$APP_DIR/backend/data/uploads"
 REWRITE_FILE="$REWRITE_DIR/$DOMAIN.conf"
 BT_PY="$PANEL_DIR/pyenv/bin/python3"
+CERT_DIR="$PANEL_DIR/vhost/cert/$DOMAIN"
+DEFAULT_CERT="$CERT_DIR/fullchain.pem"
+DEFAULT_KEY="$CERT_DIR/privkey.pem"
+
+# ---------------------------------------------------------------- SSL 探测
+# 重写站点主配置是「整体覆盖」，如果不先把现有 SSL 状态读出来，
+# 面板刚签发的证书配置就会被静默抹掉（表现为证书文件在、但 443 连不上）。
+SSL_EXISTING=0
+if [ -f "$CONF" ]; then
+  grep -qE '^[[:space:]]*listen[[:space:]]+(\[::\]:)?443' "$CONF" && SSL_EXISTING=1
+  [ -n "$CERT_FILE" ] || CERT_FILE="$(sed -n 's/^[[:space:]]*ssl_certificate[[:space:]]\{1,\}\([^;]*\);.*/\1/p' "$CONF" | head -1)"
+  [ -n "$KEY_FILE" ]  || KEY_FILE="$(sed -n 's/^[[:space:]]*ssl_certificate_key[[:space:]]\{1,\}\([^;]*\);.*/\1/p' "$CONF" | head -1)"
+fi
+# 没读到路径时回落到宝塔标准证书目录
+[ -n "$CERT_FILE" ] || CERT_FILE="$DEFAULT_CERT"
+[ -n "$KEY_FILE" ]  || KEY_FILE="$DEFAULT_KEY"
+
+SSL_ENABLED=0
+case "$SSL_MODE" in
+  on)  SSL_ENABLED=1 ;;
+  off) SSL_ENABLED=0 ;;
+  auto)
+    # 沿用现状；若现有配置没启用但证书文件已就绪，也自动启用（证书已签发却没挂上很常见）
+    if [ "$SSL_EXISTING" = "1" ]; then SSL_ENABLED=1
+    elif [ -f "$DEFAULT_CERT" ] && [ -f "$DEFAULT_KEY" ] && [ "$CERT_FILE" = "$DEFAULT_CERT" ]; then SSL_ENABLED=1
+    fi
+    ;;
+esac
+
+if [ "$SSL_ENABLED" = "1" ]; then
+  if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
+    log "SSL：启用（证书 $CERT_FILE）"
+  else
+    warn "SSL：证书文件缺失（$CERT_FILE / $KEY_FILE），本次不启用 443"
+    SSL_ENABLED=0
+  fi
+else
+  log "SSL：未启用（需要时用 --enable-ssl）"
+fi
 
 nginx_bin() {
   if [ -x /www/server/nginx/sbin/nginx ]; then printf '%s' /www/server/nginx/sbin/nginx
@@ -115,11 +167,25 @@ check_state() {
   local problems=0
   [ -f "$CONF" ] && echo "  站点配置     : $CONF" || { echo "  站点配置     : 缺失"; problems=$((problems+1)); }
   grep -qF '#error_page 404/404.html;' "$CONF" 2>/dev/null && echo "  SSL 锚点     : 有" || { echo "  SSL 锚点     : 缺失"; problems=$((problems+1)); }
-  grep -qE 'location[[:space:]]+([=~^]*[[:space:]]*)?/?\\?\.well-known[[:space:]]*\{' "$CONF" 2>/dev/null \
-    && echo "  .well-known  : 有" || { echo "  .well-known  : 缺失"; problems=$((problems+1)); }
+  if grep -qF '#CERT-APPLY-CHECK--START' "$CONF" 2>/dev/null; then
+    echo "  ACME 验证块  : 有（#CERT-APPLY-CHECK）"
+  elif grep -qE 'location[[:space:]]+([=~^]*[[:space:]]*)?/?\\?\.well-known[[:space:]]*\{' "$CONF" 2>/dev/null; then
+    echo "  ACME 验证块  : 有（location ~ \.well-known）"
+  else
+    echo "  ACME 验证块  : 缺失"; problems=$((problems+1))
+  fi
   [ -f "$EXT_FILE" ] && echo "  扩展规则     : 有" || { echo "  扩展规则     : 缺失"; problems=$((problems+1)); }
   [ -f "$ZONE_FILE" ] && echo "  限流区文件   : 有" || { echo "  限流区文件   : 缺失"; problems=$((problems+1)); }
   [ -d "$DIST_DIR" ] && echo "  前端产物     : 有（$DIST_DIR）" || { echo "  前端产物     : 缺失"; problems=$((problems+1)); }
+  if [ "$SSL_EXISTING" = "1" ]; then
+    echo "  443 监听     : 已启用"
+    echo "  证书         : $CERT_FILE"
+    [ -f "$CERT_FILE" ] || { echo "                证书文件不存在"; problems=$((problems+1)); }
+    [ -f "$KEY_FILE" ]  || { echo "                私钥文件不存在"; problems=$((problems+1)); }
+  else
+    echo "  443 监听     : 未启用（证书就绪时可加 --enable-ssl）"
+    [ -f "$DEFAULT_CERT" ] && [ -f "$DEFAULT_KEY" ] && echo "  待用证书     : $DEFAULT_CERT"
+  fi
   echo
   bt_checks || problems=$((problems+1))
   echo
@@ -154,20 +220,43 @@ if [ ! -f "$REWRITE_FILE" ]; then
 fi
 
 step "1/3 写入宝塔标准结构的站点配置（含锚点）"
+if [ "$SSL_ENABLED" = "1" ]; then
+  LISTEN_443='    listen 443 ssl;
+    http2 on;'
+  SSL_BLOCK="    ssl_certificate    $CERT_FILE;
+    ssl_certificate_key    $KEY_FILE;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers EECDH+CHACHA20:EECDH+AES128:RSA+AES128:EECDH+AES256:RSA+AES256:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_tickets on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    add_header Strict-Transport-Security \"max-age=31536000\";
+    error_page 497  https://\$host\$request_uri;"
+else
+  LISTEN_443=""
+  SSL_BLOCK=""
+fi
+
 cat > "$CONF" <<EOF
 server
 {
     listen 80;
     listen [::]:80;
+$LISTEN_443
     server_name $DOMAIN;
     index index.html index.htm default.html default.htm;
     root $DIST_DIR;
 
+    #CERT-APPLY-CHECK--START
+    # 用于SSL证书申请时的文件验证相关配置 -- 请勿删除
     include $VHOST_DIR/well-known/$DOMAIN.conf;
+    #CERT-APPLY-CHECK--END
     include $EXT_BASE/$DOMAIN/*.conf;
 
     #SSL-START SSL相关配置，请勿删除或修改下一行带注释的404规则
     #error_page 404/404.html;
+$SSL_BLOCK
     #SSL-END
 
     #ERROR-PAGE-START 错误页配置，可以注释、删除或修改
@@ -364,6 +453,11 @@ echo "  首页            : $(code_of /)"
 echo "  SPA 深链接      : $(code_of /admin/login)"
 echo -n "  API 健康检查    : "; curl -s -H "Host: $DOMAIN" http://127.0.0.1/api/health | head -c 120; echo
 echo "  源码目录保护    : $(code_of /backend/src/server.js)"
+if [ "$SSL_ENABLED" = "1" ]; then
+  echo "  HTTPS           : $(curl -sk -o /dev/null -w '%{http_code}' -H "Host: $DOMAIN" https://127.0.0.1/)"
+  curl -sk -o /dev/null -D- -H "Host: $DOMAIN" https://127.0.0.1/ 2>/dev/null \
+    | grep -iE '^strict-transport-security' | sed 's/^/  /' || true
+fi
 
 # 文件验证往返测试：写入 token → 请求 → 清理
 TOKEN="qlm-native-$STAMP"
@@ -384,11 +478,24 @@ else
   warn "面板检查未通过：请确认站点路径/运行目录与 nginx root 一致（见上方输出）"
 fi
 
-cat <<EOF
+if [ "$SSL_ENABLED" = "1" ]; then
+  cat <<EOF
+
+下一步（宝塔面板）：
+  1) 网站 → $DOMAIN → 设置 → SSL：证书已挂上，可直接开启「强制 HTTPS」
+  2) 续签仍可用「文件验证」（#CERT-APPLY-CHECK 段与 well-known include 都已保留）
+EOF
+else
+  cat <<EOF
 
 下一步（宝塔面板）：
   1) 网站 → $DOMAIN → 设置 → SSL → Let's Encrypt → 勾选域名 → 申请证书
-  2) 申请成功后开启「强制 HTTPS」
+  2) 申请成功后执行：bash deploy/bt-native.sh --domain $DOMAIN --app-dir $APP_DIR --enable-ssl
+     （或直接在面板 SSL 页开启「强制 HTTPS」，面板会自行写入）
+EOF
+fi
+
+cat <<EOF
 
 回滚（如需）：
 $(for pair in "${BACKUP_LIST[@]}"; do echo "  cp -p ${pair#*:} ${pair%%:*}"; done)
